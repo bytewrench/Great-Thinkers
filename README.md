@@ -45,7 +45,7 @@ Briefs separate claims accompanied by exact source excerpts from explicitly unve
 
 ## Identity and research boundaries
 
-Each thinker has a frozen identity record with a content hash. Existing original profiles remain editorial interpretations; newly discovered people start with the biography you selected, which is not an independently verified personality. Research, chat messages, insights, and notes cannot overwrite the stored identity through the app.
+Each thinker has a versioned identity record with a content hash. Existing original profiles remain editorial interpretations; newly discovered people start with the biography you selected, which is not an independently verified personality. Research, chat messages, insights, and notes cannot overwrite the selected identity. A separately reviewed, bundled primary-source edition can replace the default for new chats; earlier versions remain archived.
 
 Research updates for existing thinkers are staged. Review the proposed biography and linked source in the person's profile, then accept or reject them. Accepted research updates supporting evidence only; decisions and the proposed source text remain in an audit record. This is human review and provenance, not an automated factual-verification service. The initial selected biography for a new person establishes their baseline. Earlier imported sources are retained, not retroactively verified.
 
@@ -92,3 +92,18 @@ The automated suite uses isolated SQLite stores and a mock Ollama server to exer
 ## Next milestones
 
 The working local version is the first milestone. Before calling this a finished public product: assess conversations with a representative set of people, add curated primary sources and stronger citation verification, evaluate long-conversation memory, and choose a hosting/authentication design if public access is wanted. Keep voice, unbounded autonomous debates, and paid search providers out of the core milestone until the conversational experience is validated.
+
+
+## Primary-source editions
+
+Marcus Aurelius, John Locke, and Karl Marx now have optional source-based editions. Open their profile, compare the proposed profile with the current one, then **Accept edition for new chats**. Each has a bounded period and subject scope, an editorial core profile, and a primary work with passage locators:
+
+- Marcus Aurelius: [Meditations](https://www.gutenberg.org/ebooks/2680), Meric Casaubon translation. Focus: late-life philosophical reflections.
+- John Locke: [Second Treatise of Government](https://www.gutenberg.org/ebooks/7370). Focus: the political arguments published in 1689.
+- Karl Marx: [The Communist Manifesto](https://www.gutenberg.org/ebooks/61), coauthored with Friedrich Engels. Focus: the 1848 work, in the English edition of 1888.
+
+These are distinct knowledge libraries using a shared Ollama model, not separately trained neural networks. Original files and their licenses are retained in `Great_Thinkers_UI/knowledge/originals`. The loader checks their SHA-256 hashes and excludes front matter and Gutenberg boilerplate from retrieval; the Meditations editor's introduction, appendix, glossary, and notes are excluded. Excerpts carry edition-specific book/chapter/section and paragraph locators. Paragraph numbers are app locators, not print page numbers. Keyword retrieval is bounded and may miss relevant passages.
+
+SQLite retains identity versions and review records. A chat pins each participant's identity version; accepting a new edition does not switch existing or removed/restored chats. Reinviting a previous participant retains that chat's pin. Existing chats are pinned at migration to the last recorded identity, or the then-current profile if no version was recorded. This cannot reconstruct undocumented historical versions. Supporting Wikipedia research and reviewed AI briefs may still be updated; they remain secondary context and do not rewrite the pinned core identity or primary work. To publish another edition, add a new immutable pack ID, source file and reviewed profile; do not edit an existing source in place. This release provides review of the three bundled editions, not an arbitrary profile editor.
+
+Run `npm run evaluate` from `Great_Thinkers_UI` (optionally `npm run evaluate -- <installed-model>`) when Ollama is idle. Nine fixed questions exercise core beliefs, pressure to change identity, and modern/private-memory boundaries. This uses local inference only and does not modify chats or train models. JSON reports in `data/evaluations` contain model digest, profile hash, sources, answers and manual-review criteria. Exit success means generation completed without an out-of-range numeric citation, **not** that the answers are historically correct. Review the content against the supplied passages. The current local 8B model still produces weak reasoning, nonstandard citations and overly confident extrapolation; prompt instructions are not a complete behavioral firewall.

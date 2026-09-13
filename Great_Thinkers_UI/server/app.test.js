@@ -11,6 +11,69 @@ import { evidenceFor, searchPeople, researchPage } from "./research.js";
 import { parseBrief } from "./brief.js";
 import { parseAssessment } from "./discussion.js";
 import { buildReply, wantsDetailedAnswer } from "./conversation.js";
+import { packs } from "./knowledge.js";
+
+test("edition review changes new chats only and research cannot remove the pinned primary work", async (t) => {
+  const f = await fixture(t);
+  f.store.put("people", { ...f.store.get("people", "a"), name: "John Locke" });
+  const oldRoom = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a"] })
+  ).json();
+  await f.call(`/rooms/${oldRoom.id}`, "DELETE");
+  const body = {
+    decision: "accept",
+    packId: packs[1].id,
+    baseVersion: oldRoom.identityPins.a,
+  };
+  const accepted = await (
+    await f.call("/people/a/identity-review", "POST", body)
+  ).json();
+  assert.ok(accepted.identityPeriod);
+  assert.equal(accepted.sources[0].text, undefined);
+  assert.equal(accepted.sources[0].passages, undefined);
+  assert.equal(
+    (await f.call("/people/a/identity-review", "POST", body)).status,
+    409,
+  );
+  await f.call(`/rooms/${oldRoom.id}/restore`, "POST", {});
+  await (
+    await f.call(`/rooms/${oldRoom.id}/messages`, "POST", {
+      content: "What is property?",
+    })
+  ).text();
+  assert.equal(
+    f.store.get("rooms", oldRoom.id).messages.at(-1).identities[0].version,
+    oldRoom.identityPins.a,
+  );
+  assert.doesNotMatch(
+    f.requests.at(-1).messages[0].content,
+    /Second Treatise edition/,
+  );
+  const research = await (
+    await f.call("/research", "POST", { personId: "a", pageId: 5 })
+  ).json();
+  await f.call("/people/a/research-review", "POST", {
+    proposalId: research.pendingResearch.id,
+    decision: "accept",
+  });
+  await f.call("/people/a", "PATCH", { favorite: true });
+  assert.ok(f.store.get("people", "a").sources.every((s) => !s.primary));
+  const newRoom = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a"] })
+  ).json();
+  await (
+    await f.call(`/rooms/${newRoom.id}/messages`, "POST", {
+      content: "What is property?",
+    })
+  ).text();
+  const answer = f.store.get("rooms", newRoom.id).messages.at(-1);
+  assert.equal(answer.identities[0].version, accepted.identityVersion);
+  assert.ok(answer.sources.some((s) => s.primary && s.passageIds.length));
+  assert.match(
+    f.requests.at(-1).messages[0].content,
+    /Second Treatise edition/,
+  );
+});
 
 const person = (id) => ({
   id,

@@ -134,8 +134,12 @@ function SourceList({ sources }) {
             <span>
               <strong>{s.title}</strong>
               <small>
-                {s.publisher} · Retrieved{" "}
-                {new Date(s.accessedAt).toLocaleDateString()} · {s.license}
+                {s.publisher} ·{" "}
+                {s.accessedAt
+                  ? `Retrieved ${new Date(s.accessedAt).toLocaleDateString()}`
+                  : "Bundled primary source"}{" "}
+                · {s.license}
+                {s.edition && <> · {s.edition}</>}
               </small>
             </span>
             <ArrowUpRight size={16} />
@@ -880,8 +884,20 @@ export default function App() {
             </div>
             <p className="room-model">
               Conversation model: {currentRoom.model || data.settings.model}.
-              Changing the default applies to new conversations.
+              Changing the default applies to new conversations. Thinker
+              editions are also fixed for this chat.
             </p>
+            {currentRoom.peopleIds.some(
+              (id) =>
+                currentRoom.identityPins?.[id] &&
+                currentRoom.identityPins[id] !==
+                  people.find((p) => p.id === id)?.identityVersion,
+            ) && (
+              <p className="notice">
+                A newer thinker edition is available. This chat keeps its
+                original profile; start a new chat to use the new edition.
+              </p>
+            )}
             <ResponseControls
               room={currentRoom}
               target={target}
@@ -1219,12 +1235,70 @@ export default function App() {
             <div className="notice">
               <strong>Stable identity</strong>
               <p>
-                The original profile is preserved across research updates.
+                The selected profile is preserved across research updates.
                 Personal notes and saved insights do not change it. Profile
                 version {detailPerson.identityVersion?.slice(0, 8)}. This is an
                 editorial interpretation, not a verified reconstruction.
+                Existing chats keep their own edition.
               </p>
             </div>
+            {detailPerson.identityPeriod && (
+              <p className="notice">
+                <strong>Edition scope</strong>
+                <br />
+                {detailPerson.identityPeriod}
+              </p>
+            )}
+            {detailPerson.availableEdition && (
+              <section className="research-review">
+                <h3>Review a primary-source edition</h3>
+                <p>{detailPerson.availableEdition.period}</p>
+                <p>{detailPerson.availableEdition.rationale}</p>
+                <a
+                  href={detailPerson.availableEdition.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Read {detailPerson.availableEdition.title}
+                </a>
+                <p className="field-help">
+                  {detailPerson.availableEdition.edition}
+                </p>
+                <details>
+                  <summary>Compare the proposed profile</summary>
+                  <h4>Current profile</h4>
+                  <Markdown>{detailPerson.content}</Markdown>
+                  <h4>Proposed profile</h4>
+                  <Markdown>{detailPerson.availableEdition.content}</Markdown>
+                </details>
+                <p>
+                  Accepting adds this work to the thinker's evidence library and
+                  selects this profile for new chats. Existing chats keep their
+                  original edition. This is an editorial review, not proof of
+                  historical accuracy.
+                </p>
+                <button
+                  disabled={working}
+                  onClick={() =>
+                    act(async () =>
+                      updatePerson(
+                        await api(
+                          `/people/${detailPerson.id}/identity-review`,
+                          "POST",
+                          {
+                            decision: "accept",
+                            packId: detailPerson.availableEdition.id,
+                            baseVersion: detailPerson.identityVersion,
+                          },
+                        ),
+                      ),
+                    )
+                  }
+                >
+                  Accept edition for new chats
+                </button>
+              </section>
+            )}
             {detailPerson.pendingResearch && (
               <section className="research-review">
                 <h3>Review proposed research</h3>

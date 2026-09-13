@@ -13,7 +13,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "format": "prettier --write src server scripts index.html vite.config.js eslint.config.js"
+    "format": "prettier --write src server scripts index.html vite.config.js eslint.config.js",
+    "evaluate": "node scripts/evaluate.js"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",

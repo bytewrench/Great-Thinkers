@@ -50,3 +50,13 @@ These checks preceded the concise-answer refactor; timings describe the previous
 The tests do not establish historical accuracy. Local models can still invent details, omit citations, exceed requested word counts, or give weak interpretations. Source cards are provenance for the material supplied, not independent validation of generated claims. The UI and README state this explicitly.
 
 This is a working local milestone, not an assertion that the app has reached a “world class” finish line. Broader portrayal evaluation, richer primary-source research, stronger citation verification, and user feedback on the visual and conversational experience remain the next product milestones. Public hosting, authentication, voice, and cloud inference are not part of this local release.
+
+
+## Three primary-source editions (September 12, 2026 local time)
+
+- 27 automated tests passed, plus lint and production build. Added tests cover corpus extraction/locators, immutable identity history, stale-review rejection, old/new chat behavior, removed/restored chat pins, and preservation of primary works through biography research and favorite edits.
+- Ran nine fixed local Llama 3.1 8B questions on three successive prompt revisions. Final report: `data/evaluations/2026-09-13T03-08-29-252Z.json`. All nine generations completed. This is a diagnostic run, not a fidelity pass: the model resisted direct belief replacement more clearly after revision but retained weak reasoning about AI government, nonstandard citation formatting, and an irrelevant ideological explanation of why Marx could not advise a government after his death. One intermediate revision actually accepted a conflicting Marx premise; that regression is retained in the earlier local report.
+- Backed up the live database to `data/backup-before-primary-editions.sqlite` before migration. All 11 existing chats acquired identity pins. Earlier message bodies were preserved.
+- Browser check: opened Marcus Aurelius's profile, observed the edition comparison and acceptance controls, accepted the edition, and verified the primary-source card and dated scope replaced the proposal. The rendered dialog remained readable. Accepted Locke and Marx through the same local review endpoint. Existing chats retain their older edition.
+
+Next fidelity milestone: independently reviewed claim-to-passage checks and a broader, held-out question set before treating any model/profile combination as consistently faithful. The present checks protect stored identity and source integrity; they cannot guarantee every generated answer follows them.

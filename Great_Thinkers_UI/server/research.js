@@ -144,21 +144,23 @@ export function evidenceFor(person, question) {
   ].filter((w) => !stopwords.has(w));
   return person.sources
     .map((source) => {
-      const chunks = source.text
-        .split(/\n\s*\n/)
-        .filter(Boolean)
-        .flatMap((paragraph) => {
-          const parts = [];
-          let remaining = paragraph;
-          while (remaining.length > 1300) {
-            const boundary = remaining.lastIndexOf(" ", 1300);
-            const cut = boundary > 650 ? boundary : 1300;
-            parts.push(remaining.slice(0, cut));
-            remaining = remaining.slice(cut).trimStart();
-          }
-          if (remaining) parts.push(remaining);
-          return parts;
-        });
+      const chunks = source.passages
+        ? source.passages.map((p) => `[${p.locator}] ${p.text}`)
+        : source.text
+            .split(/\n\s*\n/)
+            .filter(Boolean)
+            .flatMap((paragraph) => {
+              const parts = [];
+              let remaining = paragraph;
+              while (remaining.length > 1300) {
+                const boundary = remaining.lastIndexOf(" ", 1300);
+                const cut = boundary > 650 ? boundary : 1300;
+                parts.push(remaining.slice(0, cut));
+                remaining = remaining.slice(cut).trimStart();
+              }
+              if (remaining) parts.push(remaining);
+              return parts;
+            });
       if (!chunks.length) chunks.push("No passage available.");
       const frequency = new Map(
         words.map((word) => [
@@ -180,19 +182,26 @@ export function evidenceFor(person, question) {
           ),
         }))
         .sort((a, b) => b.score - a.score || a.index - b.index);
-      const chosen = [
-        0,
-        ...ranked
-          .filter((c) => c.index !== 0)
-          .slice(0, 2)
-          .map((c) => c.index),
-      ]
-        .sort((a, b) => a - b)
-        .map((i) => chunks[i]);
+      const selected = source.primary
+        ? ranked.slice(0, 3)
+        : [
+            ranked.find((c) => c.index === 0),
+            ...ranked.filter((c) => c.index !== 0).slice(0, 2),
+          ];
+      const { passages: _passages, ...metadata } = source;
       return {
-        ...source,
-        text: [...new Set(chosen)].join("\n\n[…]\n\n"),
+        ...metadata,
+        retrievalScore: ranked[0]?.score || 0,
+        passageIds: source.passages
+          ? selected.map((c) => source.passages[c.index].id)
+          : undefined,
+        text: selected.map((c) => c.text).join("\n\n[...]\n\n"),
       };
     })
+    .sort(
+      (a, b) =>
+        Number(!!b.primary) - Number(!!a.primary) ||
+        b.retrievalScore - a.retrievalScore,
+    )
     .slice(0, 3);
 }

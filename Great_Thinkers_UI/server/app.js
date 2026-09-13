@@ -1,7 +1,8 @@
 import express from "express";
+import { identityService } from "./knowledge.js";
 import { generateBrief } from "./brief.js";
 import { assessDiscussion } from "./discussion.js";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { searchPeople, researchPage } from "./research.js";
 import {
   DEFAULT_RESPONSE,
@@ -21,7 +22,7 @@ const cleanPerson = (p) => ({
         source: { ...p.pendingResearch.source, text: undefined },
       }
     : undefined,
-  sources: p.sources.map(({ text: _text, ...s }) => s),
+  sources: p.sources.map(({ text: _text, passages: _passages, ...s }) => s),
 });
 export function createApp({
   store,
@@ -46,23 +47,18 @@ export function createApp({
     next();
   });
   app.use(express.json({ limit: "64kb" }));
-  const person = (id) => {
-    const p = store.get("people", id) || fail("Person not found.", 404);
-    let identity = store.get("identities", id);
-    if (!identity) {
-      identity = store.put("identities", {
-        id,
-        name: p.name,
-        content: p.content,
-        version: createHash("sha256").update(p.content).digest("hex"),
-        createdAt: new Date().toISOString(),
-      });
-    }
-    return {
-      ...p,
-      content: identity.content,
-      identityVersion: identity.version,
-    };
+  const { person, pin, accept } = identityService(store);
+  const savePerson = (p) => {
+    const {
+      availableEdition: _edition,
+      identityVersion: _version,
+      identityPeriod: _period,
+      identityPackIds: _packs,
+      ...stored
+    } = p;
+    stored.sources = stored.sources.filter((source) => !source.primary);
+    store.put("people", stored);
+    return person(p.id);
   };
   // Freeze existing editorial identities before any research or conversation writes.
   store.all("people").forEach((p) => person(p.id));
@@ -71,9 +67,11 @@ export function createApp({
     r.messages.findLast((m) => m.model)?.model ||
     store.get("settings", "main")?.model ||
     "llama3.1:8b";
-  store.all("rooms").forEach((r) => {
-    if (!r.model) store.put("rooms", { ...r, model: roomModel(r) });
-  });
+  for (const kind of ["rooms", "removedRooms"]) {
+    store
+      .all(kind)
+      .forEach((r) => store.put(kind, pin({ ...r, model: roomModel(r) })));
+  }
   const room = (id) =>
     store.get("rooms", id) || fail("Conversation not found.", 404);
   const editable = (id) => {
@@ -144,7 +142,21 @@ export function createApp({
     if (typeof req.body.favorite === "boolean") p.favorite = req.body.favorite;
     if (typeof req.body.notes === "string")
       p.notes = req.body.notes.slice(0, 1500);
-    res.json(cleanPerson(store.put("people", p)));
+    res.json(cleanPerson(savePerson(p)));
+  });
+  app.post("/api/people/:id/identity-review", (req, res) => {
+    if (busy.size)
+      fail(
+        "Wait for the current reply or research to finish before changing an edition.",
+        409,
+      );
+    if (req.body.decision !== "accept")
+      fail(
+        "Accept the reviewed edition, or leave the current edition unchanged.",
+      );
+    res.json(
+      cleanPerson(accept(req.params.id, req.body.packId, req.body.baseVersion)),
+    );
   });
   app.get("/api/research", async (req, res) => {
     const q = String(req.query.q || "").trim();
@@ -190,7 +202,7 @@ export function createApp({
       p.image = result.image;
       p.sources = [result.source];
     }
-    store.put("people", p);
+    savePerson(p);
     res.json(cleanPerson(person(p.id)));
   });
   app.post("/api/people/:id/research-review", (req, res) => {
@@ -216,7 +228,7 @@ export function createApp({
       p.sources = [proposal.source];
     }
     delete p.pendingResearch;
-    res.json(cleanPerson(store.put("people", p)));
+    res.json(cleanPerson(savePerson(p)));
   });
   app.post("/api/people/:id/brief", async (req, res) => {
     const p = person(req.params.id);
@@ -239,7 +251,7 @@ export function createApp({
         id: randomUUID(),
         generatedAt: new Date().toISOString(),
       };
-      res.json(cleanPerson(store.put("people", latest)));
+      res.json(cleanPerson(savePerson(latest)));
     } finally {
       clearTimeout(timeout);
       busy.delete(key);
@@ -259,7 +271,7 @@ export function createApp({
     });
     if (req.body.decision === "accept") p.supplementalBrief = p.aiBrief;
     delete p.aiBrief;
-    res.json(cleanPerson(store.put("people", p)));
+    res.json(cleanPerson(savePerson(p)));
   });
   app.post("/api/insights", (req, res) => {
     const r = room(req.body.roomId);
@@ -329,6 +341,9 @@ export function createApp({
       store.put("rooms", {
         id: randomUUID(),
         peopleIds: ids,
+        identityPins: Object.fromEntries(
+          ids.map((id) => [id, person(id).identityVersion]),
+        ),
         ...DEFAULT_RESPONSE,
         model: store.get("settings", "main")?.model || "llama3.1:8b",
         title: ids.map((id) => person(id).name.split(" ").at(-1)).join(" & "),
@@ -356,6 +371,7 @@ export function createApp({
       r.responseMode = req.body.responseMode;
     if (req.body.voice !== undefined) r.voice = req.body.voice;
     if (req.body.peopleIds) r.peopleIds = peopleIds(req.body.peopleIds);
+    pin(r);
     if (typeof req.body.title === "string")
       r.title = req.body.title.trim().slice(0, 100) || r.title;
     r.updatedAt = new Date().toISOString();
@@ -393,7 +409,10 @@ export function createApp({
     const targets = req.body.target ? [req.body.target] : r.peopleIds;
     if (targets.some((id) => !r.peopleIds.includes(id)))
       fail("That person is not in this conversation.");
-    let plan = replyPlan(r, targets, person);
+    pin(r);
+    const pinnedPerson = (id) => person(id, r.identityPins[id]);
+    targets.forEach(pinnedPerson);
+    let plan = replyPlan(r, targets, pinnedPerson);
     if (retry) {
       const last = r.messages.at(-1);
       if (
@@ -506,7 +525,11 @@ export function createApp({
     try {
       for (const step of plan) {
         controller.signal.throwIfAborted();
-        const { messages, sources, maxTokens } = buildReply(step, r, person);
+        const { messages, sources, maxTokens } = buildReply(
+          step,
+          r,
+          pinnedPerson,
+        );
         current = {
           id: randomUUID(),
           role: "assistant",
@@ -518,12 +541,12 @@ export function createApp({
           researchBriefs: step.personIds
             .map((id) => ({
               personId: id,
-              briefId: person(id).supplementalBrief?.id,
+              briefId: pinnedPerson(id).supplementalBrief?.id,
             }))
             .filter((x) => x.briefId),
           identities: step.personIds.map((id) => ({
             personId: id,
-            version: person(id).identityVersion,
+            version: pinnedPerson(id).identityVersion,
           })),
           sources,
           createdAt: new Date().toISOString(),
