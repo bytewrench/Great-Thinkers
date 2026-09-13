@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import DatasetBuilder from "./DatasetBuilder.jsx";
+import FeaturedMinds from "./FeaturedMinds.jsx";
 import ResearchBrief from "./ResearchBrief.jsx";
 import DiscussionMeter from "./DiscussionMeter.jsx";
 import Notebook from "./Notebook.jsx";
@@ -386,9 +387,6 @@ export default function App() {
       </div>
     );
   const people = [...data.people].sort((a, b) => a.name.localeCompare(b.name));
-  const featured = ["Marcus Aurelius", "Albert Einstein", "Virginia Woolf"]
-    .map((n) => people.find((p) => p.name === n))
-    .filter(Boolean);
   const categories = [
     "All minds",
     ...new Set(people.map((p) => shortCategory(p.category))),
@@ -674,49 +672,22 @@ export default function App() {
               </div>
             </section>
             {view === "library" && !query && category === "All minds" && (
-              <section className="featured-section">
-                <div className="section-heading">
-                  <h2>A good place to begin</h2>
-                  <span>THREE DIFFERENT WAYS OF SEEING</span>
-                </div>
-                <div className="featured-grid">
-                  {featured.map((p, i) => (
-                    <button
-                      className={`featured-card feature-${i}`}
-                      key={p.id}
-                      onClick={() => {
-                        setDetail(p.id);
-                        setNotes(p.notes);
-                      }}
-                    >
-                      <div className="featured-top">
-                        <span>
-                          0{i + 1} / {shortCategory(p.category)}
-                        </span>
-                        <ArrowUpRight size={21} />
-                      </div>
-                      <div className="featured-body">
-                        <Avatar person={p} large />
-                        <div>
-                          <h3>{p.name}</h3>
-                          <p>
-                            {
-                              [
-                                "Find clarity in what you can control.",
-                                "Make room for a thought experiment.",
-                                "Look closer at the life within.",
-                              ][i]
-                            }
-                          </p>
-                        </div>
-                      </div>
-                      <span className="featured-footer">
-                        Meet this mind <span>→</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
+              <FeaturedMinds
+                people={people}
+                Avatar={Avatar}
+                shortCategory={shortCategory}
+                working={working || busy}
+                onMeet={(p) => {
+                  setDetail(p.id);
+                  setNotes(p.notes);
+                }}
+                onStart={(ids, question) =>
+                  act(async () => {
+                    await createRoom(ids);
+                    setDraft(question);
+                  })
+                }
+              />
             )}
             <section className="catalog">
               <div className="section-heading catalog-heading">

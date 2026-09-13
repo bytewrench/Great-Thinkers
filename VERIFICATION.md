@@ -76,3 +76,10 @@ Next fidelity milestone: independently reviewed claim-to-passage checks and a br
 
 - Added a Delete idea control to every notebook card, with an inline confirmation that names the saved copy and reflection as the deletion target. The original chat is unaffected.
 - 30 automated tests and lint pass. New coverage verifies selected deletion, preservation of other ideas and original messages, absence from refreshed state, missing-ID handling, and saving the original answer again. Docker production build passed.
+
+
+## Themed starting groups
+
+- Replaced fixed featured minds with four editorial groups on government, knowledge, art, and quantum theory. Each uses three relevant library profiles with contrasting approaches; dissent is invited, not scripted.
+- Browser verified a quantum group, switching to an art group with Another group, and a government group after reload. Selection excludes the last displayed group when alternatives exist and is persisted in browser storage. Returning to the library remounts the section and selects again.
+- Added a group conversation shortcut that fills a suggested question without sending it. ESLint and the Docker production build passed; the updated container is healthy. No inference is used for group selection.

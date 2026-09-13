@@ -2261,3 +2261,26 @@ summary:hover {
 .dataset-builder button {
   margin-top: 8px;
 }
+
+.featured-topic {
+  margin: 0 0 20px;
+}
+.featured-topic h3 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+.featured-topic p {
+  margin: 0;
+  color: var(--muted, #6d7c68);
+}
+.featured-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 16px;
+}
+.featured-actions .field-help {
+  flex: 1 1 240px;
+  margin: 0;
+}
