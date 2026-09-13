@@ -12,6 +12,118 @@ import { parseBrief } from "./brief.js";
 import { parseAssessment } from "./discussion.js";
 import { buildReply, wantsDetailedAnswer } from "./conversation.js";
 import { packs } from "./knowledge.js";
+import { prepareSource } from "./dataset.js";
+
+test("web datasets quarantine sources and drafts, preserve old chats, and export without private data", async (t) => {
+  const f = await fixture(t);
+  const p = await (await f.call("/research", "POST", { pageId: 5 })).json();
+  const oldRoom = await (
+    await f.call("/rooms", "POST", { peopleIds: [p.id] })
+  ).json();
+  const text =
+    "A source excerpt describing this person's documented work and historical interests. ".repeat(
+      4,
+    );
+  const body = {
+    title: "Collected writings",
+    text,
+    attribution: "Author, public edition",
+    sourceType: "primary",
+    url: "https://example.org/book",
+  };
+  assert.equal(
+    (
+      await f.call(`/people/${p.id}/sources`, "POST", {
+        ...body,
+        url: "javascript:alert(1)",
+      })
+    ).status,
+    400,
+  );
+  const withSource = await (
+    await f.call(`/people/${p.id}/sources`, "POST", body)
+  ).json();
+  const source = withSource.datasetSources[0];
+  assert.equal(source.text, undefined);
+  assert.ok(!withSource.sources.some((s) => s.id === source.id));
+  assert.equal(
+    (await f.call(`/people/${p.id}/sources`, "POST", body)).status,
+    409,
+  );
+  assert.equal((await f.call(`/people/a/sources/${source.id}`)).status, 404);
+  const drafted = await (
+    await f.call(`/people/${p.id}/profile-draft`, "POST", {
+      sourceIds: ["wiki-5", source.id],
+      scope: "Documented life",
+    })
+  ).json();
+  assert.ok(drafted.profileDraft?.grounded.length);
+  assert.equal(drafted.identityVersion, p.identityVersion);
+  const accepted = await (
+    await f.call(`/people/${p.id}/profile-review`, "POST", {
+      draftId: drafted.profileDraft.id,
+      decision: "accept",
+      scope: drafted.profileDraft.scope,
+      content: drafted.profileDraft.content,
+    })
+  ).json();
+  assert.notEqual(accepted.identityVersion, p.identityVersion);
+  assert.ok(accepted.sources.some((s) => s.id === source.id));
+  assert.equal(accepted.profileDraft, undefined);
+  await (
+    await f.call(`/rooms/${oldRoom.id}/messages`, "POST", {
+      content: "Who are you?",
+    })
+  ).text();
+  assert.equal(
+    f.store.get("rooms", oldRoom.id).messages.at(-1).identities[0].version,
+    p.identityVersion,
+  );
+  assert.ok(
+    !f.store
+      .get("rooms", oldRoom.id)
+      .messages.at(-1)
+      .sources.some((s) => s.id === source.id),
+  );
+  await f.call(`/people/${p.id}`, "PATCH", { notes: "PRIVATE_NOTE_TOKEN" });
+  const exported = await (await f.call(`/people/${p.id}/dataset`)).json();
+  assert.equal(exported.format, "great-thinkers-dataset");
+  assert.equal(exported.datasetSources[0].text, text.trim());
+  assert.equal(exported.identityVersions.length, 2);
+  assert.doesNotMatch(
+    JSON.stringify(exported),
+    /PRIVATE_NOTE_TOKEN|Who are you/,
+  );
+  assert.equal(
+    (
+      await f.call(`/people/${p.id}/profile-review`, "POST", {
+        draftId: drafted.profileDraft.id,
+        decision: "accept",
+      })
+    ).status,
+    409,
+  );
+});
+
+test("dataset source input has bounded text and immutable provenance", () => {
+  const body = {
+    title: "Text",
+    text: "x".repeat(100),
+    attribution: "Author, 1600",
+    sourceType: "secondary",
+  };
+  assert.equal(prepareSource(body, "a").sha256.length, 64);
+  assert.throws(() => prepareSource({ ...body, text: "short" }, "a"), /100/);
+  assert.throws(
+    () => prepareSource({ ...body, text: "x".repeat(200001) }, "a"),
+    /200/,
+  );
+  assert.throws(
+    () =>
+      prepareSource({ ...body, url: "https://secret:pass@example.org" }, "a"),
+    /credentials/,
+  );
+});
 
 test("edition review changes new chats only and research cannot remove the pinned primary work", async (t) => {
   const f = await fixture(t);
@@ -121,7 +233,7 @@ async function fixture(t) {
     }
     if (
       JSON.parse(body).format === "json" &&
-      JSON.parse(body).messages[0].content.startsWith("Create a research brief")
+      JSON.parse(body).messages[0].content.includes("Create a research brief")
     ) {
       res.end(
         JSON.stringify({

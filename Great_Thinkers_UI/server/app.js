@@ -1,6 +1,7 @@
 import express from "express";
 import { identityService } from "./knowledge.js";
 import { generateBrief } from "./brief.js";
+import { prepareSource, draftProfile } from "./dataset.js";
 import { assessDiscussion } from "./discussion.js";
 import { randomUUID } from "node:crypto";
 import { searchPeople, researchPage } from "./research.js";
@@ -46,17 +47,22 @@ export function createApp({
     res.set("X-Content-Type-Options", "nosniff");
     next();
   });
+  app.use("/api/people/:id/sources", express.json({ limit: "1mb" }));
   app.use(express.json({ limit: "64kb" }));
-  const { person, pin, accept } = identityService(store);
+  app.get("/api/health", (_req, res) => res.json({ ok: true }));
+  const { person, pin, accept, acceptDraft } = identityService(store);
   const savePerson = (p) => {
     const {
       availableEdition: _edition,
       identityVersion: _version,
       identityPeriod: _period,
       identityPackIds: _packs,
+      datasetSources: _dataset,
       ...stored
     } = p;
-    stored.sources = stored.sources.filter((source) => !source.primary);
+    stored.sources = stored.sources.filter(
+      (source) => !source.primary && !source.personId,
+    );
     store.put("people", stored);
     return person(p.id);
   };
@@ -157,6 +163,120 @@ export function createApp({
     res.json(
       cleanPerson(accept(req.params.id, req.body.packId, req.body.baseVersion)),
     );
+  });
+  app.post("/api/people/:id/sources", (req, res) => {
+    const p = person(req.params.id);
+    const source = prepareSource(req.body, p.id);
+    const existing = store
+      .all("thinkerSources")
+      .filter((s) => s.personId === p.id);
+    if (existing.some((s) => s.sha256 === source.sha256))
+      fail("This text is already in the dataset.", 409);
+    if (existing.length >= 30)
+      fail(
+        "This dataset has 30 sources. Use focused excerpts for this local edition.",
+      );
+    store.put("thinkerSources", source);
+    res.json(cleanPerson(person(p.id)));
+  });
+  app.get("/api/people/:id/sources/:sourceId", (req, res) => {
+    person(req.params.id);
+    const source = store.get("thinkerSources", req.params.sourceId);
+    if (!source || source.personId !== req.params.id)
+      fail("Source not found.", 404);
+    res.json(source);
+  });
+  app.post("/api/people/:id/profile-draft", async (req, res) => {
+    const p = person(req.params.id);
+    if (busy.size)
+      fail("Wait for the current reply or research to finish.", 409);
+    const ids = req.body.sourceIds;
+    const candidates = [
+      ...store.all("thinkerSources").filter((s) => s.personId === p.id),
+      ...p.sources,
+    ];
+    if (
+      !Array.isArray(ids) ||
+      !ids.length ||
+      ids.length > 3 ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !candidates.some((s) => s.id === id))
+    )
+      fail("Choose one to three sources for this profile draft.");
+    const selected = ids.map((id) => candidates.find((s) => s.id === id));
+    const controller = new AbortController(),
+      key = `profile:${p.id}`;
+    busy.set(key, controller);
+    const timeout = setTimeout(() => controller.abort(), 120000);
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    try {
+      const draft = await draftProfile(
+        p,
+        selected,
+        req.body.scope,
+        ollamaUrl,
+        store.get("settings", "main")?.model || "llama3.1:8b",
+        controller.signal,
+      );
+      res.json(
+        cleanPerson(savePerson({ ...person(p.id), profileDraft: draft })),
+      );
+    } finally {
+      clearTimeout(timeout);
+      busy.delete(key);
+    }
+  });
+  app.post("/api/people/:id/profile-review", (req, res) => {
+    if (busy.size)
+      fail("Wait for the current reply or research to finish.", 409);
+    const p = person(req.params.id),
+      draft = p.profileDraft;
+    if (!draft || draft.id !== req.body.draftId)
+      fail("The draft changed. Reload and review it again.", 409);
+    if (!["accept", "reject"].includes(req.body.decision))
+      fail("Choose accept or reject.");
+    if (req.body.decision === "accept")
+      acceptDraft(p.id, draft, req.body.content, req.body.scope);
+    else
+      store.put("identityReviews", {
+        id: draft.id,
+        personId: p.id,
+        draft,
+        decision: "reject",
+        reviewedAt: new Date().toISOString(),
+      });
+    const latest = person(p.id);
+    delete latest.profileDraft;
+    res.json(cleanPerson(savePerson(latest)));
+  });
+  app.get("/api/people/:id/dataset", (req, res) => {
+    const p = person(req.params.id);
+    res.set(
+      "Content-Disposition",
+      `attachment; filename="thinker-${p.id}.json"`,
+    );
+    res.json({
+      format: "great-thinkers-dataset",
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      person: {
+        id: p.id,
+        name: p.name,
+        biography: p.biography,
+        category: p.category,
+      },
+      activeIdentity: store.get("identities", p.id),
+      identityVersions: store
+        .all("identityVersions")
+        .filter((i) => i.personId === p.id),
+      reviews: store.all("identityReviews").filter((i) => i.personId === p.id),
+      sources: p.sources,
+      datasetSources: store
+        .all("thinkerSources")
+        .filter((s) => s.personId === p.id),
+    });
   });
   app.get("/api/research", async (req, res) => {
     const q = String(req.query.q || "").trim();

@@ -108,6 +108,22 @@ export function identityService(store) {
         { status: 409 },
       );
     const primary = (identity.packIds || []).map(sourceFor);
+    const curated = (identity.curatedSources || []).map((ref) => {
+      const source = store.get("thinkerSources", ref.id);
+      if (
+        !source ||
+        source.personId !== id ||
+        source.sha256 !== ref.sha256 ||
+        createHash("sha256").update(source.text).digest("hex") !== ref.sha256
+      )
+        throw Object.assign(
+          new Error(
+            "This edition's source is missing or changed. Restore the dataset before continuing.",
+          ),
+          { status: 409 },
+        );
+      return source;
+    });
     if (
       primary.some(
         (source) => identity.packHashes?.[source.id] !== source.sha256,
@@ -125,11 +141,24 @@ export function identityService(store) {
       identityVersion: identity.version,
       identityPeriod: identity.period,
       identityPackIds: identity.packIds || [],
+      datasetSources: store
+        .all("thinkerSources")
+        .filter((s) => s.personId === id)
+        .map(({ text: _text, ...s }) => ({
+          ...s,
+          inEdition: curated.some((c) => c.id === s.id),
+        })),
       availableEdition: packs.find(
         (pack) =>
           pack.name === p.name && !(identity.packIds || []).includes(pack.id),
       ),
-      sources: [...primary, ...p.sources.filter((s) => !s.primary)],
+      sources: [
+        ...primary,
+        ...curated,
+        ...p.sources.filter(
+          (s) => !s.primary && !curated.some((c) => c.id === s.id),
+        ),
+      ],
     };
   };
   const pin = (r) => {
@@ -184,5 +213,66 @@ export function identityService(store) {
     store.put("identities", identity);
     return person(id);
   };
-  return { person, pin, accept };
+  const acceptDraft = (id, draft, content, scope) => {
+    const p = person(id);
+    if (p.identityVersion !== draft.baseVersion)
+      throw Object.assign(
+        new Error(
+          "The identity changed. Prepare a fresh profile before accepting it.",
+        ),
+        { status: 409 },
+      );
+    if (
+      typeof content !== "string" ||
+      content.trim().length < 100 ||
+      content.length > 6000 ||
+      typeof scope !== "string" ||
+      !scope.trim() ||
+      scope.length > 300
+    )
+      throw Object.assign(
+        new Error(
+          "Use a profile of 100–6,000 characters and a scope up to 300 characters.",
+        ),
+        { status: 400 },
+      );
+    const curatedSources = draft.sourceIds
+      .map((sourceId) => store.get("thinkerSources", sourceId))
+      .filter(Boolean)
+      .map((s) => ({ id: s.id, sha256: s.sha256 }));
+    const active = store.get("identities", id);
+    const payload = {
+      content: content.trim(),
+      period: scope.trim(),
+      curatedSources,
+      packIds: active.packIds || [],
+      packHashes: active.packHashes || {},
+    };
+    const version = createHash("sha256")
+      .update(JSON.stringify(payload))
+      .digest("hex");
+    const identity = {
+      ...payload,
+      id,
+      name: p.name,
+      version,
+      previousVersion: p.identityVersion,
+      createdAt: new Date().toISOString(),
+    };
+    archive(identity);
+    store.put("identityReviews", {
+      id: draft.id,
+      personId: id,
+      draft,
+      acceptedContent: identity.content,
+      acceptedScope: identity.period,
+      version,
+      baseVersion: p.identityVersion,
+      decision: "accept",
+      reviewedAt: identity.createdAt,
+    });
+    store.put("identities", identity);
+    return person(id);
+  };
+  return { person, pin, accept, acceptDraft };
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import DatasetBuilder from "./DatasetBuilder.jsx";
 import ResearchBrief from "./ResearchBrief.jsx";
 import DiscussionMeter from "./DiscussionMeter.jsx";
 import Notebook from "./Notebook.jsx";
@@ -1339,6 +1340,14 @@ export default function App() {
                 </div>
               </section>
             )}
+            <DatasetBuilder
+              key={detailPerson.id}
+              person={detailPerson}
+              api={api}
+              onUpdate={updatePerson}
+              disabled={working || busy}
+              onBusy={setWorking}
+            />
             <ResearchBrief
               person={detailPerson}
               working={working}
@@ -1361,12 +1370,6 @@ export default function App() {
                 )
               }
             />
-            {working && (
-              <p role="status" className="thinking">
-                Preparing research with local AI. This can take up to 90
-                seconds.
-              </p>
-            )}
             {error && (
               <p role="alert" className="dialog-error">
                 {error}

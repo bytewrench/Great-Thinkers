@@ -1,0 +1,14 @@
+name: great-thinkers
+services:
+  app:
+    build: .
+    restart: always
+    init: true
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      OLLAMA_URL: http://host.docker.internal:11434
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

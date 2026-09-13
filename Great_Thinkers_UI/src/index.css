@@ -2212,3 +2212,52 @@ summary:hover {
   border-left: 3px solid #94ad9e;
   padding-left: 12px;
 }
+
+.dataset-builder label:not(.dataset-source) {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0;
+  font-size: 14px;
+}
+.dataset-builder input:not([type="checkbox"]),
+.dataset-builder textarea,
+.dataset-builder select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 11px;
+  border: 1px solid #d9ded3;
+  border-radius: 8px;
+  background: #fff;
+  color: #233e32;
+  font: inherit;
+}
+.dataset-builder textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+.dataset-source {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 0;
+}
+.dataset-source input {
+  margin-top: 5px;
+}
+.dataset-source span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dataset-source small {
+  display: block;
+  color: #6d7c68;
+}
+.dataset-draft {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid #d9ded3;
+}
+.dataset-builder button {
+  margin-top: 8px;
+}

@@ -4,9 +4,9 @@ A local library of minds: research a person, talk with an AI portrayal, or invit
 
 ## Run on Windows
 
-Install **Node.js 24 or newer** and **Ollama**. Download a conversational model (the default is `llama3.1:8b`), then open **Start Great Thinkers.cmd** in this folder.
+Start **Docker Desktop** and **Ollama**. Download a conversational model (the default is `llama3.1:8b`), then open **Start Great Thinkers.cmd** in this folder. After the initial setup, the container starts with Docker automatically.
 
-Or run:
+For native development without Docker, stop the app container, install **Node.js 24 or newer**, and run:
 
 ```powershell
 cd Great_Thinkers_UI
@@ -45,7 +45,7 @@ Briefs separate claims accompanied by exact source excerpts from explicitly unve
 
 ## Identity and research boundaries
 
-Each thinker has a versioned identity record with a content hash. Existing original profiles remain editorial interpretations; newly discovered people start with the biography you selected, which is not an independently verified personality. Research, chat messages, insights, and notes cannot overwrite the selected identity. A separately reviewed, bundled primary-source edition can replace the default for new chats; earlier versions remain archived.
+Each thinker has a versioned identity record with a content hash. Existing original profiles remain editorial interpretations; newly discovered people start with the biography you selected, which is not an independently verified personality. Research, chat messages, insights, and notes cannot overwrite the selected identity. A separately reviewed profile or bundled primary-source edition can replace the default for new chats; earlier versions remain archived.
 
 Research updates for existing thinkers are staged. Review the proposed biography and linked source in the person's profile, then accept or reject them. Accepted research updates supporting evidence only; decisions and the proposed source text remain in an audit record. This is human review and provenance, not an automated factual-verification service. The initial selected biography for a new person establishes their baseline. Earlier imported sources are retained, not retroactively verified.
 
@@ -57,7 +57,7 @@ Saved insights are independent snapshots of the original question, answer, peopl
 
 Data is stored in `data/great-thinkers.sqlite`, outside the UI folder and excluded from Git. To back it up, stop the app and copy the entire `data` directory. Completed messages are persisted after each speaker; an interrupted process may lose the current unfinished reply's text, but not earlier saved messages. A stopped reply can be retried.
 
-The server binds only to `127.0.0.1`, checks Host/Origin, and calls Ollama at `127.0.0.1:11434`. It is a **single-user local app**, not a publicly deployable authenticated service. Do not expose it through a reverse proxy or port forwarding without adding authentication and reviewing the deployment architecture.
+The native server binds to `127.0.0.1`; Docker listens inside the container and publishes only to host `127.0.0.1`. Both check Host/Origin. Ollama stays local: native calls use `127.0.0.1:11434`, and Docker uses `host.docker.internal:11434`. It is a **single-user local app**, not a publicly deployable authenticated service. Do not expose it through a reverse proxy or port forwarding without adding authentication and reviewing the deployment architecture.
 
 Research sends the entered name and selected page identifiers to Wikipedia/Wikidata. Portraits load from Wikimedia; the UI's fonts are bundled locally. Conversation messages are sent only to local Ollama. New research needs internet access. Previously saved profiles and chat generation can work offline; uncached portraits may not load.
 
@@ -104,6 +104,27 @@ Marcus Aurelius, John Locke, and Karl Marx now have optional source-based editio
 
 These are distinct knowledge libraries using a shared Ollama model, not separately trained neural networks. Original files and their licenses are retained in `Great_Thinkers_UI/knowledge/originals`. The loader checks their SHA-256 hashes and excludes front matter and Gutenberg boilerplate from retrieval; the Meditations editor's introduction, appendix, glossary, and notes are excluded. Excerpts carry edition-specific book/chapter/section and paragraph locators. Paragraph numbers are app locators, not print page numbers. Keyword retrieval is bounded and may miss relevant passages.
 
-SQLite retains identity versions and review records. A chat pins each participant's identity version; accepting a new edition does not switch existing or removed/restored chats. Reinviting a previous participant retains that chat's pin. Existing chats are pinned at migration to the last recorded identity, or the then-current profile if no version was recorded. This cannot reconstruct undocumented historical versions. Supporting Wikipedia research and reviewed AI briefs may still be updated; they remain secondary context and do not rewrite the pinned core identity or primary work. To publish another edition, add a new immutable pack ID, source file and reviewed profile; do not edit an existing source in place. This release provides review of the three bundled editions, not an arbitrary profile editor.
+SQLite retains identity versions and review records. A chat pins each participant's identity version; accepting a new edition does not switch existing or removed/restored chats. Reinviting a previous participant retains that chat's pin. Existing chats are pinned at migration to the last recorded identity, or the then-current profile if no version was recorded. This cannot reconstruct undocumented historical versions. Supporting Wikipedia research and reviewed AI briefs may still be updated; they remain secondary context and do not rewrite the pinned core identity or primary work. To publish another edition, add a new immutable pack ID, source file and reviewed profile; do not edit an existing source in place. The web dataset builder also provides reviewed AI drafts and editable profiles for any imported person.
 
 Run `npm run evaluate` from `Great_Thinkers_UI` (optionally `npm run evaluate -- <installed-model>`) when Ollama is idle. Nine fixed questions exercise core beliefs, pressure to change identity, and modern/private-memory boundaries. This uses local inference only and does not modify chats or train models. JSON reports in `data/evaluations` contain model digest, profile hash, sources, answers and manual-review criteria. Exit success means generation completed without an out-of-range numeric citation, **not** that the answers are historically correct. Review the content against the supplied passages. The current local 8B model still produces weak reasoning, nonstandard citations and overly confident extrapolation; prompt instructions are not a complete behavioral firewall.
+
+
+## Docker on this computer
+
+Run `docker compose up -d --build` from the repository root, or double-click `Start Great Thinkers.cmd` after starting Docker Desktop. The site is available at http://127.0.0.1:3001. Compose uses `restart: always`, so the created container starts again when Docker Engine starts, including after a manual container stop. `docker compose down` removes the container and disables that automatic start until you run `up` again. This serves the site automatically; it does not automatically open a browser window. Docker Desktop's Windows-login setting is independent and has not been changed.
+
+The container runs as the non-root node user, binds the published port to this computer's loopback only, and mounts the existing `./data` folder. Rebuilding/recreating containers preserves your SQLite data. Do not run the native server against this database at the same time. Ollama stays on Windows; Docker connects through `host.docker.internal:11434`. Ollama must be running to generate responses. No model files are duplicated in the image. The health check measures the site, not model availability. Use `docker compose logs --tail 50 app` to troubleshoot and `docker compose up -d --build` after code updates.
+
+To make a portable full backup, stop this app container with `docker compose stop`, copy the complete data folder, then `docker compose start`. Docker builds exclude that folder, secrets, and logs. The native development commands remain available after stopping the container.
+
+## Build datasets in the web interface
+
+Discover a person, then open their profile and **Build this thinker's dataset**. Add a source title, attribution, optional origin link, and pasted text or a UTF-8 .txt/.md file. The text is stored locally as an immutable source; merely adding it does not admit it into conversations. Use focused excerpts: at most 200,000 characters per source, 30 sources per thinker, and three selected sources per draft. Links are provenance, not automatic webpage fetching; PDF/OCR and automatic book discovery are future work.
+
+Choose sources and a period/perspective, then **Prepare personality with local AI**. The model receives up to 12,000 characters from each selected source. The draft must have exact supporting excerpts; those checks establish textual provenance, not factual correctness. Review the claims and edit the draft before **Accept profile for new chats**. Unverified recalled background from the brief is not copied into the drafted core profile. Existing chats retain their identity and admitted source versions. Imported text never becomes a training job or changes Ollama weights.
+
+**Download thinker dataset (JSON)** exports source material, identity versions, and review records without chats or private notes. The format is for portability and inspection; an import workflow is not implemented yet. Keep the full SQLite backup for restoration today.
+
+## Planned private VPS milestone
+
+Local dataset building comes first. Before exposing the app through Coolify: Google OAuth with verified-email access initially limited to `bytewrench@gmail.com`; owner-controlled, revocable invitations; server-side authorization on every data/generation endpoint; secure sessions; a dataset import/migration path; and OpenRouter as an explicitly configured provider with model allowlists, per-user quotas, concurrency/rate limits and a total spending cutoff. New provider/model choices must preserve chat version boundaries. No OAuth credentials, public hosting or paid inference are configured by this local Docker release. Hosting budgets and the domain must be established before enabling paid calls.

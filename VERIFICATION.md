@@ -60,3 +60,13 @@ This is a working local milestone, not an assertion that the app has reached a â
 - Browser check: opened Marcus Aurelius's profile, observed the edition comparison and acceptance controls, accepted the edition, and verified the primary-source card and dated scope replaced the proposal. The rendered dialog remained readable. Accepted Locke and Marx through the same local review endpoint. Existing chats retain their older edition.
 
 Next fidelity milestone: independently reviewed claim-to-passage checks and a broader, held-out question set before treating any model/profile combination as consistently faithful. The present checks protect stored identity and source integrity; they cannot guarantee every generated answer follows them.
+
+
+## Local Docker and web dataset builder
+
+- 29 automated tests and ESLint pass. Added tests cover staged source text, URL/size validation, duplicate-source rejection, source ownership, local profile drafting, reviewed acceptance, old-chat isolation, stale-draft rejection, and dataset export without private notes or chats.
+- Built the production image successfully on Docker Desktop's Linux engine using Node 24. Container runs as the node user and publishes 3001 only on 127.0.0.1. Inspected the effective restart policy: `always`. The Windows Docker-login setting was not changed, and the entire Docker Engine was not restarted because unrelated containers are running.
+- Verified the app health endpoint and connectivity from inside the container to existing Windows Ollama models through host.docker.internal. Created `data/backup-before-docker.sqlite` before switching from the native process to Docker. The existing data directory is bind-mounted; no model weights were copied.
+- Browser: opened source/file controls and prepared a profile from Meditations using local Llama 3.1 8B. An initial prompt failed the exact-excerpt gate; the revised prompt returned five matching excerpts with an editable profile and accept/discard controls. Inspected the rendered draft and supporting passages, then discarded this test draft without changing the active edition. Text matching does not verify interpretation; drafts still need review.
+- Restarted only the Great Thinkers container. It became healthy; 102 people and 11 conversations remained available and a hash comparison confirmed complete chat history was unchanged. The discarded draft remained absent.
+- Google OAuth, invitations, OpenRouter spending enforcement, public hosting, and dataset re-import are explicitly deferred to the private VPS milestone. The current site remains local-only.
