@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import ResearchBrief from "./ResearchBrief.jsx";
+import DiscussionMeter from "./DiscussionMeter.jsx";
 import Notebook from "./Notebook.jsx";
 import ResponseControls from "./ResponseControls.jsx";
 import {
@@ -165,6 +167,8 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState("speaking");
+  const [removeId, setRemoveId] = useState(null);
   const [working, setWorking] = useState(false);
   const [draft, setDraft] = useState("");
   const [target, setTarget] = useState("");
@@ -172,6 +176,7 @@ export default function App() {
   const [researchName, setResearchName] = useState("");
   const [results, setResults] = useState(null);
   const [researchFor, setResearchFor] = useState(null);
+  const [autoBrief, setAutoBrief] = useState(true);
   const [notes, setNotes] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
@@ -259,7 +264,7 @@ export default function App() {
     setDetail(null);
     setModal("research");
   }
-  async function send(text = draft, retry = false) {
+  async function send(text = draft, retry = false, everyone = false) {
     if (
       busy ||
       working ||
@@ -272,6 +277,7 @@ export default function App() {
     )
       return;
     setBusy(true);
+    setPhase("speaking");
     setError("");
     follow.current = true;
     let accepted = false;
@@ -281,7 +287,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: text,
-          target: target || undefined,
+          target: everyone ? undefined : target || undefined,
           retry,
         }),
       });
@@ -295,6 +301,7 @@ export default function App() {
       function event(line) {
         if (!line.trim()) return;
         const e = JSON.parse(line);
+        if (e.type === "phase") setPhase(e.phase);
         if (e.type === "room") updateRoom(e.room);
         if (e.type === "token")
           setData((d) => ({
@@ -478,32 +485,53 @@ export default function App() {
             </p>
           ) : (
             data.rooms.map((r) => (
-              <button
-                key={r.id}
-                disabled={busy}
-                className={
-                  view === "chat" && r.id === activeId ? "active-room" : ""
-                }
-                onClick={() => openRoom(r.id)}
-              >
-                <MessageCircle size={16} />
-                <span>
-                  {r.title}
-                  <small>
-                    {r.peopleIds
-                      .map((id) =>
-                        people
-                          .find((p) => p.id === id)
-                          ?.name.split(" ")
-                          .at(-1),
-                      )
-                      .join(" · ")}
-                  </small>
-                </span>
-              </button>
+              <div className="history-row" key={r.id}>
+                <button
+                  disabled={busy}
+                  className={
+                    view === "chat" && r.id === activeId ? "active-room" : ""
+                  }
+                  onClick={() => openRoom(r.id)}
+                >
+                  <MessageCircle size={16} />
+                  <span>
+                    {r.title}
+                    <small>
+                      {r.peopleIds
+                        .map((id) =>
+                          people
+                            .find((p) => p.id === id)
+                            ?.name.split(" ")
+                            .at(-1),
+                        )
+                        .join(" · ")}
+                    </small>
+                  </span>
+                </button>
+                <button
+                  className="history-remove"
+                  disabled={busy}
+                  title={`Remove ${r.title} from history`}
+                  aria-label={`Remove ${r.title} from history`}
+                  onClick={() => {
+                    setRemoveId(r.id);
+                    setModal("delete");
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             ))
           )}
         </div>
+        <button
+          className="removed-chats"
+          disabled={busy}
+          onClick={() => setModal("removed")}
+        >
+          <Trash2 size={14} /> Removed chats ({(data.removedRooms || []).length}
+          )
+        </button>
         <div className="sidebar-bottom">
           <div className="local-note">
             <ShieldCheck size={17} />
@@ -839,9 +867,12 @@ export default function App() {
                 </button>
                 <button
                   className="icon"
-                  aria-label="Delete conversation"
+                  aria-label="Remove conversation from history"
                   disabled={busy}
-                  onClick={() => setModal("delete")}
+                  onClick={() => {
+                    setRemoveId(activeId);
+                    setModal("delete");
+                  }}
                 >
                   <Trash2 size={17} />
                 </button>
@@ -863,6 +894,21 @@ export default function App() {
                 )
               }
             />
+            {currentRoom.peopleIds.length > 1 && (
+              <DiscussionMeter
+                room={currentRoom}
+                people={people}
+                busy={busy}
+                phase={phase}
+                onContinue={() =>
+                  send(
+                    "Continue the previous topic for another two short rounds. Engage each other's specific points; preserve genuine differences and do not force agreement.",
+                    false,
+                    true,
+                  )
+                }
+              />
+            )}
             <div
               className="messages"
               ref={scrollArea}
@@ -928,6 +974,11 @@ export default function App() {
                               : "AI PORTRAYAL"}
                       </span>
                     </div>
+                    {m.watching && (
+                      <p className="synthesis-context">
+                        Discussion · round {m.round} of 2
+                      </p>
+                    )}
                     {m.kind === "synthesis" && (
                       <p className="synthesis-context">
                         Informed by{" "}
@@ -1214,6 +1265,39 @@ export default function App() {
                 </div>
               </section>
             )}
+            <ResearchBrief
+              person={detailPerson}
+              working={working}
+              onGenerate={() =>
+                act(async () =>
+                  updatePerson(
+                    await api(`/people/${detailPerson.id}/brief`, "POST", {}),
+                  ),
+                )
+              }
+              onReview={(decision) =>
+                act(async () =>
+                  updatePerson(
+                    await api(
+                      `/people/${detailPerson.id}/brief-review`,
+                      "POST",
+                      { briefId: detailPerson.aiBrief.id, decision },
+                    ),
+                  ),
+                )
+              }
+            />
+            {working && (
+              <p role="status" className="thinking">
+                Preparing research with local AI. This can take up to 90
+                seconds.
+              </p>
+            )}
+            {error && (
+              <p role="alert" className="dialog-error">
+                {error}
+              </p>
+            )}
             <details>
               <summary>Read the full character profile</summary>
               <Markdown>{detailPerson.content}</Markdown>
@@ -1345,9 +1429,11 @@ export default function App() {
         >
           <div className="modal-content">
             <p className="modal-intro">
-              Enter a name, then choose the right person. We’ll save their
-              Wikipedia biography and source locally. Updates to an existing
-              person wait for your review before influencing replies.
+              Find the right person, then let local AI prepare a broader
+              research brief: key ideas, works, influences, and questions to
+              investigate. Wikipedia helps identify the person and supplies
+              starting evidence. You review new material before it influences
+              replies.
             </p>
             <form
               className="research-form"
@@ -1395,6 +1481,19 @@ export default function App() {
                 <p>Try their full name or add an occupation.</p>
               </div>
             )}
+            <label className="ai-research-option">
+              <input
+                type="checkbox"
+                checked={autoBrief}
+                onChange={(e) => setAutoBrief(e.target.checked)}
+                disabled={working}
+              />{" "}
+              Prepare an AI research brief after selecting a person
+            </label>
+            <p className="field-help">
+              Uses your local model ({data.settings.model}). Additional model
+              knowledge is labeled unverified. No paid research API.
+            </p>
             <div className="research-results">
               {results?.map((p) => (
                 <button
@@ -1410,6 +1509,10 @@ export default function App() {
                       setModal(null);
                       setDetail(added.id);
                       setNotes(added.notes);
+                      if (autoBrief)
+                        updatePerson(
+                          await api(`/people/${added.id}/brief`, "POST", {}),
+                        );
                     })
                   }
                 >
@@ -1434,7 +1537,7 @@ export default function App() {
               </p>
             )}
             <div className="research-foot">
-              <Globe2 size={17} /> Uses Wikipedia · No paid research API
+              <Globe2 size={17} /> Wikipedia identification + local AI research
             </div>
           </div>
         </Modal>
@@ -1599,12 +1702,50 @@ export default function App() {
           </form>
         </Modal>
       )}
-      {modal === "delete" && (
-        <Modal title="Delete this conversation?" close={() => setModal(null)}>
+      {modal === "removed" && (
+        <Modal title="Removed chats" close={() => setModal(null)}>
           <div className="modal-content">
             <p>
-              “{currentRoom.title}” and its messages will be permanently
-              removed. You can export it first.
+              Restore a conversation with its messages, model, and settings
+              intact. Saved insights are kept separately.
+            </p>
+            {!(data.removedRooms || []).length && <p>No removed chats.</p>}
+            {(data.removedRooms || []).map((r) => (
+              <div className="removed-chat-row" key={r.id}>
+                <span>{r.title}</span>
+                <button
+                  disabled={working}
+                  onClick={() =>
+                    act(async () => {
+                      const restored = await api(
+                        `/rooms/${r.id}/restore`,
+                        "POST",
+                        {},
+                      );
+                      updateRoom(restored);
+                      setData((d) => ({
+                        ...d,
+                        removedRooms: d.removedRooms.filter(
+                          (x) => x.id !== r.id,
+                        ),
+                      }));
+                    })
+                  }
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+      {modal === "delete" && (
+        <Modal title="Remove from history?" close={() => setModal(null)}>
+          <div className="modal-content">
+            <p>
+              “{data.rooms.find((r) => r.id === removeId)?.title}” will move to
+              Removed chats. You can restore it anytime. Saved insights are
+              kept.
             </p>
             <div className="modal-actions">
               <button onClick={() => setModal(null)}>Keep conversation</button>
@@ -1613,18 +1754,27 @@ export default function App() {
                 disabled={working}
                 onClick={() =>
                   act(async () => {
-                    await api(`/rooms/${activeId}`, "DELETE");
+                    await api(`/rooms/${removeId}`, "DELETE");
                     setData((d) => ({
                       ...d,
-                      rooms: d.rooms.filter((r) => r.id !== activeId),
+                      rooms: d.rooms.filter((r) => r.id !== removeId),
+                      removedRooms: [
+                        ...(d.removedRooms || []),
+                        {
+                          id: removeId,
+                          title: d.rooms.find((r) => r.id === removeId)?.title,
+                        },
+                      ],
                     }));
-                    setActiveId(null);
-                    setView("library");
+                    if (activeId === removeId) {
+                      setActiveId(null);
+                      setView("library");
+                    }
                     setModal(null);
                   })
                 }
               >
-                Delete conversation
+                Remove from history
               </button>
             </div>
           </div>

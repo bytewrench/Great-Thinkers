@@ -1,4 +1,6 @@
 import express from "express";
+import { generateBrief } from "./brief.js";
+import { assessDiscussion } from "./discussion.js";
 import { createHash, randomUUID } from "node:crypto";
 import { searchPeople, researchPage } from "./research.js";
 import {
@@ -92,6 +94,9 @@ export function createApp({
   app.get("/api/state", (_req, res) =>
     res.json({
       people: store.all("people").map((p) => cleanPerson(person(p.id))),
+      removedRooms: store
+        .all("removedRooms")
+        .map((r) => ({ id: r.id, title: r.title })),
       insights: store
         .all("insights")
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -213,6 +218,49 @@ export function createApp({
     delete p.pendingResearch;
     res.json(cleanPerson(store.put("people", p)));
   });
+  app.post("/api/people/:id/brief", async (req, res) => {
+    const p = person(req.params.id);
+    if (busy.size)
+      fail("Wait for the current discussion or research brief to finish.", 409);
+    const controller = new AbortController();
+    const key = `brief:${p.id}`;
+    busy.set(key, controller);
+    const timeout = setTimeout(() => controller.abort(), 90000);
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    try {
+      const model = store.get("settings", "main")?.model || "llama3.1:8b";
+      const brief = await generateBrief(p, ollamaUrl, model, controller.signal);
+      // Re-read to preserve favorites or notes edited while the model ran.
+      const latest = person(p.id);
+      latest.aiBrief = {
+        ...brief,
+        id: randomUUID(),
+        generatedAt: new Date().toISOString(),
+      };
+      res.json(cleanPerson(store.put("people", latest)));
+    } finally {
+      clearTimeout(timeout);
+      busy.delete(key);
+    }
+  });
+  app.post("/api/people/:id/brief-review", (req, res) => {
+    const p = person(req.params.id);
+    if (!p.aiBrief || p.aiBrief.id !== req.body.briefId)
+      fail("This brief has changed. Reload and review it again.", 409);
+    if (!["accept", "reject"].includes(req.body.decision))
+      fail("Choose accept or reject.");
+    store.put("briefReviews", {
+      ...p.aiBrief,
+      personId: p.id,
+      decision: req.body.decision,
+      reviewedAt: new Date().toISOString(),
+    });
+    if (req.body.decision === "accept") p.supplementalBrief = p.aiBrief;
+    delete p.aiBrief;
+    res.json(cleanPerson(store.put("people", p)));
+  });
   app.post("/api/insights", (req, res) => {
     const r = room(req.body.roomId);
     const index = r.messages.findIndex((m) => m.id === req.body.messageId);
@@ -243,6 +291,7 @@ export function createApp({
         model: message.model,
         modelDigest: message.modelDigest,
         identities: message.identities || [],
+        researchBriefs: message.researchBriefs || [],
         people: (message.personIds || [message.personId])
           .filter(Boolean)
           .map((id) => ({ id, name: person(id).name })),
@@ -294,7 +343,7 @@ export function createApp({
     const r = room(req.params.id);
     if (
       req.body.responseMode !== undefined &&
-      !["synthesis", "individual"].includes(req.body.responseMode)
+      !["synthesis", "individual", "watch"].includes(req.body.responseMode)
     )
       fail("Choose a valid answer format.");
     if (
@@ -314,9 +363,18 @@ export function createApp({
   });
   app.delete("/api/rooms/:id", (req, res) => {
     editable(req.params.id);
-    room(req.params.id);
+    const removed = room(req.params.id);
+    store.put("removedRooms", removed);
     store.remove("rooms", req.params.id);
     res.json({ ok: true });
+  });
+  app.post("/api/rooms/:id/restore", (req, res) => {
+    const restored =
+      store.get("removedRooms", req.params.id) ||
+      fail("Removed conversation not found.", 404);
+    store.put("rooms", restored);
+    store.remove("removedRooms", restored.id);
+    res.json(restored);
   });
   app.post("/api/rooms/:id/stop", (req, res) => {
     busy.get(req.params.id)?.abort();
@@ -351,6 +409,8 @@ export function createApp({
         );
       plan = [
         {
+          round: last.round,
+          watching: last.watching,
           kind: last.kind || "individual",
           personId: last.personId,
           personIds: originalPeople,
@@ -455,6 +515,12 @@ export function createApp({
           status: "interrupted",
           model: settings.model,
           modelDigest: r.modelDigest,
+          researchBriefs: step.personIds
+            .map((id) => ({
+              personId: id,
+              briefId: person(id).supplementalBrief?.id,
+            }))
+            .filter((x) => x.briefId),
           identities: step.personIds.map((id) => ({
             personId: id,
             version: person(id).identityVersion,
@@ -514,7 +580,35 @@ export function createApp({
         current.status = "complete";
         save();
         emit({ type: "room", room: r });
+        const completed = current;
         current = null;
+        if (r.responseMode === "watch" || (step.watching && retry)) {
+          emit({ type: "phase", phase: "assessing" });
+          const assessment = await assessDiscussion(
+            r,
+            ollamaUrl,
+            settings.model,
+            controller.signal,
+          );
+          if (!controller.signal.aborted) {
+            r.discussionEvents = [
+              ...(r.discussionEvents || []).filter(
+                (e) => e.messageId !== completed.id,
+              ),
+              {
+                ...assessment,
+                messageId: completed.id,
+                questionId: r.messages.findLast((m) => m.role === "user").id,
+                round: step.round,
+                model: settings.model,
+                createdAt: new Date().toISOString(),
+              },
+            ];
+            save();
+            emit({ type: "room", room: r });
+          }
+          emit({ type: "phase", phase: "speaking" });
+        }
       }
     } catch (error) {
       if (current) {

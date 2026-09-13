@@ -23,12 +23,25 @@ Open **http://127.0.0.1:3001**. In Settings, select an installed Ollama model. N
 - Discover someone by name. Wikipedia search and Wikidata's human classification narrow the choices; confirm the correct biography before importing it.
 - Connect research to an original profile or refresh its source. Biographical text, source URL, article revision, and retrieval date are saved locally.
 - Chat with one person or a roundtable of up to three. Address everyone or one participant, and change participants between turns.
+- Choose Watch discussion for two short rounds of replies to one another, with an animated speaker graph and a color-coded assessment. Stop anytime or request another round.
 - Get one brief combined answer by default, with important disagreement stated plainly. Ask for more detail in a follow-up.
 - Switch Answer format to Individual answers for separate plain-language perspectives, or In character for historical style. The choice is saved per conversation; existing histories stay intact.
 - Receive streamed replies from a selected local Ollama model. Stop or retry an interrupted reply.
-- Reopen, rename, export, or delete saved conversations.
+- Reopen, rename, export, or remove conversations from history. Restore them anytime from Removed chats; removal is not permanent erasure.
 - Save completed answers to a searchable Insights notebook; edit titles and reflections, reopen the original conversation, and export the notebook as JSON.
 - Keep private notes for each thinker. Notes and insights are never added to model prompts.
+
+## Watching a discussion
+
+The At the table panel uses red for conflicting positions, yellow for partial common ground, green for explicit agreement, and blue when exploring or unable to assess. It highlights the current speaker and keeps assessment history for the current question. Expand the panel to read the quoted replies behind its color. There is no percentage or scripted progression toward green.
+
+Watch discussion runs two rounds (up to six individual replies), with bounded local-model assessments between replies once two people have spoken. Exact excerpts from different speakers must match completed replies before a non-neutral assessment is displayed. This checks quotation provenance, not whether the interpretation is correct. Assessments can be wrong; failed assessments remain blue. Ordinary combined answers keep their single-call workflow. The meter evaluates Watch discussion, not an unseen debate behind combined answers.
+
+## AI-assisted research
+
+Discovery can automatically prepare a local Ollama research brief after you select a matching person. Existing profiles also have a Prepare with local AI button. Wikipedia/Wikidata still identify the person and provide starting source material; the model adds context, works, influences, critiques, and research questions from its learned knowledge. It does not independently browse other websites.
+
+Briefs separate claims accompanied by exact source excerpts from explicitly unverified model context. Invalid or invented source excerpts are excluded; a valid excerpt does not establish that a claim follows from it. The draft is stored locally and excluded from replies until you choose Use reviewed brief. That admits a bounded portion as secondary, unverified context, never as a replacement for the fixed identity. Draft decisions and source/model metadata are retained. Discard draft rejects a pending brief. No paid API is used. Local model verification rejects cloud aliases, and research generation is serialized with conversations.
 
 ## Identity and research boundaries
 
@@ -78,4 +91,4 @@ The automated suite uses isolated SQLite stores and a mock Ollama server to exer
 
 ## Next milestones
 
-The working local version is the first milestone. Before calling this a finished public product: assess conversations with a representative set of people, add curated primary sources and stronger citation verification, evaluate long-conversation memory, and choose a hosting/authentication design if public access is wanted. Keep voice, autonomous debates, and paid search providers out of the core milestone until the conversational experience is validated.
+The working local version is the first milestone. Before calling this a finished public product: assess conversations with a representative set of people, add curated primary sources and stronger citation verification, evaluate long-conversation memory, and choose a hosting/authentication design if public access is wanted. Keep voice, unbounded autonomous debates, and paid search providers out of the core milestone until the conversational experience is validated.

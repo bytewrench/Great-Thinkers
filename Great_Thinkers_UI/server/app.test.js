@@ -8,6 +8,8 @@ import { once } from "node:events";
 import { openStore } from "./store.js";
 import { createApp } from "./app.js";
 import { evidenceFor, searchPeople, researchPage } from "./research.js";
+import { parseBrief } from "./brief.js";
+import { parseAssessment } from "./discussion.js";
 import { buildReply, wantsDetailedAnswer } from "./conversation.js";
 
 const person = (id) => ({
@@ -51,6 +53,53 @@ async function fixture(t) {
             ? { remote_host: "https://ollama.com" }
             : { model_info: { "general.architecture": "llama" } },
         ),
+      );
+      return;
+    }
+    if (
+      JSON.parse(body).format === "json" &&
+      JSON.parse(body).messages[0].content.startsWith("Create a research brief")
+    ) {
+      res.end(
+        JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              grounded: [
+                {
+                  claim: "A documented biography",
+                  sourceId: "wiki-5",
+                  quote: "A documented life.",
+                },
+              ],
+              context: [
+                { topic: "Further ideas", summary: "UNVERIFIED_BRIEF_CONTEXT" },
+              ],
+              questions: ["Which original writings support this?"],
+            }),
+          },
+        }),
+      );
+      return;
+    }
+    if (JSON.parse(body).format === "json") {
+      if (mode === "wait-assessment") return;
+      const transcript = JSON.parse(JSON.parse(body).messages.at(-1).content);
+      const evidence = [
+        ...new Map(transcript.map((m) => [m.personId, m])).values(),
+      ].map((m) => ({ messageId: m.id, quote: m.text.slice(0, 30) }));
+      res.end(
+        JSON.stringify({
+          message: {
+            content:
+              mode === "bad-assessment"
+                ? "not JSON"
+                : JSON.stringify({
+                    state: "conflict",
+                    reason: "Contrasting priorities remain.",
+                    evidence,
+                  }),
+          },
+        }),
       );
       return;
     }
@@ -693,4 +742,204 @@ test("changed model weights cannot silently alter an existing conversation", asy
   );
   assert.equal(f.requests.length, 1);
   assert.equal(f.store.get("rooms", r.id).messages.length, 2);
+});
+
+test("removed conversations disappear from history and restore intact", async (t) => {
+  const f = await fixture(t);
+  const r = await (await f.call("/rooms", "POST", { peopleIds: ["a"] })).json();
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "Keep this conversation",
+    })
+  ).text();
+  const before = f.store.get("rooms", r.id);
+  assert.equal((await f.call(`/rooms/${r.id}`, "DELETE")).status, 200);
+  const state = await (await f.call("/state")).json();
+  assert.equal(state.rooms.length, 0);
+  assert.deepEqual(state.removedRooms, [{ id: r.id, title: before.title }]);
+  assert.equal(
+    (await f.call(`/rooms/${r.id}/messages`, "POST", { content: "Hidden" }))
+      .status,
+    404,
+  );
+  const restored = await (
+    await f.call(`/rooms/${r.id}/restore`, "POST", {})
+  ).json();
+  assert.deepEqual(restored, before);
+  assert.equal(f.store.all("removedRooms").length, 0);
+});
+
+test("watch mode runs exactly two rounds, shares earlier arguments, and saves quoted assessments", async (t) => {
+  const f = await fixture(t);
+  const r = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a", "b"] })
+  ).json();
+  await f.call(`/rooms/${r.id}`, "PATCH", { responseMode: "watch" });
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "What is fair?",
+    })
+  ).text();
+  const saved = f.store.get("rooms", r.id);
+  const answers = saved.messages.filter((m) => m.role === "assistant");
+  assert.deepEqual(
+    answers.map((m) => [m.personId, m.round]),
+    [
+      ["a", 1],
+      ["b", 1],
+      ["a", 2],
+      ["b", 2],
+    ],
+  );
+  assert.equal(saved.discussionEvents.length, 4);
+  assert.equal(saved.discussionEvents[0].state, "unclear");
+  assert.equal(saved.discussionEvents.at(-1).state, "conflict");
+  assert.equal(saved.discussionEvents.at(-1).evidence.length, 2);
+  const generations = f.requests.filter((r) => r.stream);
+  assert.equal(generations.length, 4);
+  assert.match(JSON.stringify(generations[2].messages), /A caf/);
+  f.mode("bad-assessment");
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "Try another perspective",
+    })
+  ).text();
+  assert.equal(
+    f.store.get("rooms", r.id).discussionEvents.at(-1).state,
+    "unclear",
+  );
+  assert.equal(f.store.get("rooms", r.id).messages.at(-1).status, "complete");
+});
+
+test("agreement colors require valid states and exact quotations from different speakers", () => {
+  const replies = [
+    { id: "a1", personId: "a", content: "I support individual rights." },
+    { id: "b1", personId: "b", content: "I support collective ownership." },
+  ];
+  const evidence = replies.map((m) => ({ messageId: m.id, quote: m.content }));
+  for (const state of ["conflict", "common-ground", "agreement", "unclear"])
+    assert.equal(
+      parseAssessment(
+        JSON.stringify({ state, reason: "A short assessment", evidence }),
+        replies,
+      ).state,
+      state,
+    );
+  assert.throws(() =>
+    parseAssessment(
+      JSON.stringify({
+        state: "agreement",
+        reason: "Invented",
+        evidence: [{ messageId: "a1", quote: "We completely agree." }],
+      }),
+      replies,
+    ),
+  );
+  assert.throws(() =>
+    parseAssessment(
+      JSON.stringify({ state: "100%", reason: "Invented", evidence }),
+      replies,
+    ),
+  );
+});
+
+test("stopping during assessment preserves completed replies and prevents later rounds", async (t) => {
+  const f = await fixture(t);
+  f.mode("wait-assessment");
+  const r = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a", "b"] })
+  ).json();
+  await f.call(`/rooms/${r.id}`, "PATCH", { responseMode: "watch" });
+  const stream = await f.call(`/rooms/${r.id}/messages`, "POST", {
+    content: "Debate this",
+  });
+  const reader = stream.body.getReader();
+  let seen = "";
+  while ((seen.match(/"phase":"assessing"/g) || []).length < 2) {
+    const { value, done } = await reader.read();
+    assert.equal(done, false);
+    seen += new TextDecoder().decode(value);
+  }
+  await f.call(`/rooms/${r.id}/stop`, "POST", {});
+  while (!(await reader.read()).done) {
+    /* Drain stopped stream. */
+  }
+  const saved = f.store.get("rooms", r.id);
+  assert.equal(saved.messages.length, 3);
+  assert.ok(saved.messages.slice(1).every((m) => m.status === "complete"));
+  assert.equal(saved.discussionEvents.length, 1);
+});
+
+test("AI briefs remain quarantined until review and never replace identity", async (t) => {
+  const f = await fixture(t);
+  const p = await (await f.call("/research", "POST", { pageId: 5 })).json();
+  const draft = await (
+    await f.call(`/people/${p.id}/brief`, "POST", {})
+  ).json();
+  assert.equal(draft.aiBrief.grounded.length, 1);
+  assert.equal(draft.supplementalBrief, undefined);
+  assert.equal(draft.content, p.content);
+  const r = await (
+    await f.call("/rooms", "POST", { peopleIds: [p.id] })
+  ).json();
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "What do you think?",
+    })
+  ).text();
+  assert.doesNotMatch(
+    JSON.stringify(f.requests.at(-1)),
+    /UNVERIFIED_BRIEF_CONTEXT/,
+  );
+  assert.equal(
+    (
+      await f.call(`/people/${p.id}/brief-review`, "POST", {
+        briefId: "stale",
+        decision: "accept",
+      })
+    ).status,
+    409,
+  );
+  const accepted = await (
+    await f.call(`/people/${p.id}/brief-review`, "POST", {
+      briefId: draft.aiBrief.id,
+      decision: "accept",
+    })
+  ).json();
+  assert.equal(accepted.aiBrief, undefined);
+  assert.equal(accepted.content, p.content);
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "More context?",
+    })
+  ).text();
+  assert.match(JSON.stringify(f.requests.at(-1)), /UNVERIFIED_BRIEF_CONTEXT/);
+  assert.match(JSON.stringify(f.requests.at(-1)), /NOT independently verified/);
+  assert.equal(f.store.all("briefReviews")[0].decision, "accept");
+  f.mode("cloud");
+  const count = f.requests.length;
+  assert.notEqual(
+    (await f.call(`/people/${p.id}/brief`, "POST", {})).status,
+    200,
+  );
+  assert.equal(f.requests.length, count);
+});
+
+test("AI brief source claims with invented or mismatched excerpts are excluded", () => {
+  const result = parseBrief(
+    JSON.stringify({
+      grounded: [
+        {
+          claim: "False source",
+          sourceId: "wiki-5",
+          quote: "This passage was invented.",
+        },
+      ],
+      context: [{ topic: "Unverified idea", summary: "Needs checking" }],
+      questions: [],
+    }),
+    [{ id: "wiki-5", text: "A documented life." }],
+  );
+  assert.equal(result.grounded.length, 0);
+  assert.equal(result.context[0].summary, "Needs checking");
 });

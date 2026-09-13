@@ -4,7 +4,7 @@ Checked on September 12, 2026 on Windows, Node.js 24.18.0, an RTX 5070 Laptop GP
 
 ## Automated
 
-- `npm test`: 18 passing tests. Isolated databases and a mock Ollama transport cover ordered group replies and shared context, targeted replies, streamed Unicode, cancellation, retry without duplicate visitor messages, conflicting writes, input validation, origin rejection, research identity/provenance, source retrieval limits, persistence, and cloud-alias rejection.
+- `npm test`: 24 passing tests. Isolated databases and a mock Ollama transport cover ordered group replies and shared context, targeted replies, streamed Unicode, cancellation, retry without duplicate visitor messages, conflicting writes, input validation, origin rejection, research identity/provenance, source retrieval limits, persistence, and cloud-alias rejection.
 - `npm run lint`: passed.
 - `npm run build`: passed.
 - `npm audit --audit-level=moderate`: zero reported vulnerabilities after dependency updates.
@@ -37,6 +37,13 @@ These checks preceded the concise-answer refactor; timings describe the previous
 - Live model check: the installed Llama 3.1 8B digest and both profile hashes were recorded with a completed answer. A real Wikipedia refresh of Marcus Aurelius was staged without replacing his current identity.
 - Browser check: reviewed and rejected the staged Marcus Aurelius refresh; the review controls disappeared. The notebook and reflection survived reload. At 390 pixels, the notebook had no horizontal overflow; the viewport was restored.
 - A local database backup was created before the identity migration. Older messages retain their original metadata; missing historic model/profile versions are not invented.
+
+## History, discussion, and AI research
+
+- 24 automated tests pass. Added coverage includes reversible history removal/restoration, two-round discussion order and context, exact-quote validation, malformed-assessment fallback, stopping during assessment, research-brief quarantine and admission without identity replacement, invented-excerpt exclusion, and cloud-model rejection for briefs.
+- Lint and production build passed. In a live Llama 3.1 8B run, Locke and Marx completed four replies in two rounds in 15.8 seconds. The panel remained red after both views were available and cited exact excerpts from the generated replies. This is one latency observation, not a guarantee or historical verification.
+- Browser: opened the assessment details, removed the test conversation from its history-row control, and restored it with messages and settings intact. Inspected the mobile discussion at 390 by 844 pixels: no horizontal overflow and the composer stayed inside the viewport. Restored the viewport afterward.
+- Generated and displayed a local AI research draft for John Locke. With no connected sources, it correctly displayed zero grounded excerpts and kept the generated context unverified and pending review. The revised prompt produced additional works, influences, and research questions through the profile-screen button. The unverified test draft was discarded through the UI; it was not admitted into the portrayal. Verified the discovery form has AI brief generation selected by default.
 
 ## Limits of this evidence
 
