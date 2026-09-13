@@ -465,7 +465,7 @@ test("stop preserves partial output and blocks conflicting conversation edits", 
 
 test("API validates membership, input limits, and untrusted origins", async (t) => {
   const f = await fixture(t);
-  for (const ids of [[], ["a", "a"], ["a", "b", "c", "d"], ["missing"]])
+  for (const ids of [[], ["a", "a"], ["a", "b", "c", "d", "e"], ["missing"]])
     assert.equal(
       (await f.call("/rooms", "POST", { peopleIds: ids })).status,
       400,
@@ -1147,3 +1147,43 @@ test("AI brief source claims with invented or mismatched excerpts are excluded",
   assert.equal(result.grounded.length, 0);
   assert.equal(result.context[0].summary, "Needs checking");
 });
+
+test("four participants can join and debate; a fifth cannot be added", async (t) => {
+  const f = await fixture(t);
+  f.store.put("people", person("e"));
+  const ids = ["a", "b", "c", "d"];
+  const created = await f.call("/rooms", "POST", { peopleIds: ids });
+  assert.equal(created.status, 200);
+  const room = await created.json();
+  assert.deepEqual(room.peopleIds, ids);
+  assert.equal(
+    (await f.call(`/rooms/${room.id}`, "PATCH", { peopleIds: [...ids, "e"] }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (await f.call("/rooms", "POST", { peopleIds: [...ids, "e"] })).status,
+    400,
+  );
+  assert.equal(
+    (
+      await f.call(`/rooms/${room.id}`, "PATCH", {
+        peopleIds: ids,
+        responseMode: "watch",
+      })
+    ).status,
+    200,
+  );
+  await (
+    await f.call(`/rooms/${room.id}/messages`, "POST", {
+      content: "Discuss what makes a good life.",
+    })
+  ).text();
+  const replies = f.store
+    .get("rooms", room.id)
+    .messages.filter((m) => m.role === "assistant");
+  assert.deepEqual([...new Set(replies.map((m) => m.personId))].sort(), ids);
+  assert.equal(replies.length, 8);
+  assert.ok(replies.every((m) => m.status === "complete"));
+});
+

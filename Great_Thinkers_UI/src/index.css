@@ -2385,3 +2385,56 @@ summary:hover {
     flex-wrap: wrap;
   }
 }
+
+.card-selected {
+  outline: 2px solid #2d7158;
+  outline-offset: -2px;
+}
+.person-main:disabled,
+.featured-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.card-selection-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 18px;
+  margin: 20px 0;
+  background: #edf2e8;
+  border: 1px solid #cdd8c6;
+  border-radius: 12px;
+  box-shadow: 0 4px 18px #19372b0d;
+}
+.card-selection-bar strong {
+  font-size: 13px;
+}
+.selected-minds {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.selected-minds button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.card-profile {
+  padding: 4px;
+  font-size: 11px;
+  background: transparent;
+  color: #285540;
+  border: 0;
+}
+.person-footer {
+  flex-wrap: wrap;
+}

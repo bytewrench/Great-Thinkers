@@ -204,6 +204,16 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [target, setTarget] = useState("");
   const [selection, setSelection] = useState([]);
+  const [cardSelection, setCardSelection] = useState([]);
+  function toggleCard(id) {
+    setCardSelection((ids) =>
+      ids.includes(id)
+        ? ids.filter((p) => p !== id)
+        : ids.length < 4
+          ? [...ids, id]
+          : ids,
+    );
+  }
   const [researchName, setResearchName] = useState("");
   const [results, setResults] = useState(null);
   const [researchFor, setResearchFor] = useState(null);
@@ -721,10 +731,8 @@ export default function App() {
                 Avatar={Avatar}
                 shortCategory={shortCategory}
                 working={working || busy}
-                onMeet={(p) => {
-                  setDetail(p.id);
-                  setNotes(p.notes);
-                }}
+                selected={cardSelection}
+                onSelect={(p) => toggleCard(p.id)}
                 onStart={(ids, question) =>
                   act(async () => {
                     await createRoom(ids);
@@ -733,6 +741,38 @@ export default function App() {
                 }
               />
             )}
+            <div
+              className="card-selection-bar"
+              aria-label="Selected participants"
+            >
+              <strong>{cardSelection.length} of 4 seats filled</strong>
+              <div className="selected-minds">
+                {cardSelection.map((id) => (
+                  <button
+                    key={id}
+                    onClick={() => toggleCard(id)}
+                    aria-label={`Deselect ${people.find((p) => p.id === id)?.name}`}
+                  >
+                    {people.find((p) => p.id === id)?.name}
+                    <X size={13} />
+                  </button>
+                ))}
+                {!cardSelection.length && (
+                  <span>Select cards to build your conversation.</span>
+                )}
+              </div>
+              <button
+                disabled={!cardSelection.length || working || busy}
+                onClick={() =>
+                  act(async () => {
+                    await createRoom(cardSelection);
+                    setCardSelection([]);
+                  })
+                }
+              >
+                <Users size={16} /> Start conversation
+              </button>
+            </div>
             <section className="catalog">
               <div className="section-heading catalog-heading">
                 <div>
@@ -773,20 +813,39 @@ export default function App() {
               </div>
               <div className="people-grid">
                 {filtered.map((p) => (
-                  <article className="person-card" key={p.id}>
+                  <article
+                    className={`person-card ${cardSelection.includes(p.id) ? "card-selected" : ""}`}
+                    key={p.id}
+                  >
                     <button
                       className="person-main"
-                      onClick={() => {
-                        setDetail(p.id);
-                        setNotes(p.notes);
-                      }}
+                      aria-label={`${cardSelection.includes(p.id) ? "Deselect" : "Select"} ${p.name}`}
+                      aria-pressed={cardSelection.includes(p.id)}
+                      disabled={
+                        !cardSelection.includes(p.id) &&
+                        cardSelection.length >= 4
+                      }
+                      onClick={() => toggleCard(p.id)}
                     >
                       <Avatar person={p} />
-                      <small>{shortCategory(p.category)}</small>
+                      <small>
+                        {cardSelection.includes(p.id) ? "Selected · " : ""}
+                        {shortCategory(p.category)}
+                      </small>
                       <h3>{p.name}</h3>
                       <p>{p.biography.replace(/^Background & Era:\s*/, "")}</p>
                     </button>
                     <div className="person-footer">
+                      <button
+                        className="card-profile"
+                        onClick={() => {
+                          setDetail(p.id);
+                          setNotes(p.notes);
+                        }}
+                        aria-label={`View profile of ${p.name}`}
+                      >
+                        View profile
+                      </button>
                       <span>
                         {p.sources.length ? (
                           <>
@@ -1449,7 +1508,7 @@ export default function App() {
         >
           <div className="modal-content">
             <p className="modal-intro">
-              Choose up to three people. Each brings a different way of seeing.
+              Choose up to four people. Each brings a different way of seeing.
             </p>
             <label className="search-box">
               <Search size={17} />
@@ -1462,7 +1521,7 @@ export default function App() {
               />
             </label>
             <div className="selection-count">
-              {selection.length} of 3 seats filled
+              {selection.length} of 4 seats filled
             </div>
             <div className="picker-list">
               {people
@@ -1474,7 +1533,7 @@ export default function App() {
                     key={p.id}
                     className={selection.includes(p.id) ? "chosen" : ""}
                     disabled={
-                      !selection.includes(p.id) && selection.length === 3
+                      !selection.includes(p.id) && selection.length >= 4
                     }
                     onClick={() =>
                       setSelection((ids) =>

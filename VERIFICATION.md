@@ -96,3 +96,9 @@ Next fidelity milestone: independently reviewed claim-to-passage checks and a br
 - Replaced the At the table node diagram with the existing stream-driven sphere and traffic trace; removed the floating overlay. Idle graphics are stationary and show Ready, with no advancing counters. Active single-person conversations also show progress. Discussion assessments and details remain available.
 - Added A-/A+ reading controls beside the conversation title, bounded to 14-24px, with a 16px reset and local browser persistence. Message text, Markdown headings and the composer scale without browser zoom.
 - Browser verified inline placement, increase/decrease/reset, persistence after reload, and computed 17px message/composer text. Returned the preference to 16px. ESLint, production Docker build and container health passed. Stream transport is unchanged; no new inference was run for this placement change.
+
+## Card selection and four-person debates
+
+- Featured and library cards now toggle participant selection, with visible selected states and a sticky selection bar. Library cards retain a separate View profile action. The selection bar starts a conversation with the chosen people; the existing themed three-person shortcut remains available.
+- Raised participant limits in the picker and shared create/update API validator to four. Source-selection limits are unchanged.
+- Browser verified selecting three featured thinkers plus a library thinker, the four-seat count, disabled fifth card, deselection reopening a seat, and profile access. Added a passing server test for four-person creation, membership update, eight completed replies across two Watch rounds, and rejecting a fifth person. Lint and Docker production build passed; container healthy.

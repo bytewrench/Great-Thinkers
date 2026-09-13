@@ -88,11 +88,11 @@ export function createApp({
     if (
       !Array.isArray(ids) ||
       !ids.length ||
-      ids.length > 3 ||
+      ids.length > 4 ||
       new Set(ids).size !== ids.length ||
       ids.some((id) => typeof id !== "string" || !store.get("people", id))
     )
-      fail("Choose one to three different people.");
+      fail("Choose one to four different people.");
     return ids;
   };
   app.get("/api/state", (_req, res) =>

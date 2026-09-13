@@ -82,7 +82,8 @@ export default function FeaturedMinds({
   people,
   Avatar,
   shortCategory,
-  onMeet,
+  onSelect,
+  selected,
   onStart,
   working,
 }) {
@@ -125,9 +126,14 @@ export default function FeaturedMinds({
       <div className="featured-grid">
         {members.map((p, i) => (
           <button
-            className={`featured-card feature-${i}`}
+            className={`featured-card feature-${i} ${selected.includes(p.id) ? "card-selected" : ""}`}
             key={p.id}
-            onClick={() => onMeet(p)}
+            onClick={() => onSelect(p)}
+            aria-pressed={selected.includes(p.id)}
+            aria-label={`${selected.includes(p.id) ? "Deselect" : "Select"} ${p.name}`}
+            disabled={
+              working || (!selected.includes(p.id) && selected.length >= 4)
+            }
           >
             <div className="featured-top">
               <span>
@@ -143,7 +149,10 @@ export default function FeaturedMinds({
               </div>
             </div>
             <span className="featured-footer">
-              Meet this mind <span>→</span>
+              {selected.includes(p.id)
+                ? "Selected for your table"
+                : "Select this mind"}{" "}
+              <span>{selected.includes(p.id) ? "✓" : "+"}</span>
             </span>
           </button>
         ))}
