@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { Search, BookOpen, Download } from "lucide-react";
+import { Search, BookOpen, Download, Trash2 } from "lucide-react";
 
 export default function Notebook({
   insights,
   rooms,
   onOpenRoom,
   onSave,
+  onDelete,
   working,
   Markdown,
   SourceList,
 }) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const filtered = insights.filter((i) =>
     [i.title, i.question, i.content, i.note, ...i.people.map((p) => p.name)]
       .join(" ")
@@ -154,6 +156,38 @@ export default function Notebook({
                 </span>
               )}
             </div>
+          )}
+          {deleting === i.id ? (
+            <div role="group" aria-label="Confirm deleting saved idea">
+              <p>
+                Delete this saved idea and its reflection? The original chat
+                stays unchanged.
+              </p>
+              <div className="insight-actions">
+                <button
+                  disabled={working}
+                  onClick={async () => {
+                    if (await onDelete(i.id)) {
+                      setDeleting(null);
+                      if (editing?.id === i.id) setEditing(null);
+                    }
+                  }}
+                >
+                  Delete saved idea
+                </button>
+                <button disabled={working} onClick={() => setDeleting(null)}>
+                  Keep idea
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              disabled={working}
+              aria-label={`Delete saved idea: ${i.title}`}
+              onClick={() => setDeleting(i.id)}
+            >
+              <Trash2 size={16} /> Delete idea
+            </button>
           )}
         </article>
       ))}

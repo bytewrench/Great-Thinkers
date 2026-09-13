@@ -454,6 +454,11 @@ export function createApp({
       }),
     );
   });
+  app.delete("/api/insights/:id", (req, res) => {
+    if (!store.get("insights", req.params.id)) fail("Insight not found.", 404);
+    store.remove("insights", req.params.id);
+    res.json({ ok: true });
+  });
   app.post("/api/rooms", (req, res) => {
     const ids = peopleIds(req.body.peopleIds);
     const now = new Date().toISOString();

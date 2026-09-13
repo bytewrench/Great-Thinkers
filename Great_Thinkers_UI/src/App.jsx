@@ -606,6 +606,18 @@ export default function App() {
             working={working}
             Markdown={Markdown}
             SourceList={SourceList}
+            onDelete={async (id) => {
+              let deleted = false;
+              await act(async () => {
+                await api(`/insights/${id}`, "DELETE");
+                setData((d) => ({
+                  ...d,
+                  insights: d.insights.filter((i) => i.id !== id),
+                }));
+                deleted = true;
+              });
+              return deleted;
+            }}
             onSave={async (insight) => {
               let saved = false;
               await act(async () => {

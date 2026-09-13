@@ -70,3 +70,9 @@ Next fidelity milestone: independently reviewed claim-to-passage checks and a br
 - Browser: opened source/file controls and prepared a profile from Meditations using local Llama 3.1 8B. An initial prompt failed the exact-excerpt gate; the revised prompt returned five matching excerpts with an editable profile and accept/discard controls. Inspected the rendered draft and supporting passages, then discarded this test draft without changing the active edition. Text matching does not verify interpretation; drafts still need review.
 - Restarted only the Great Thinkers container. It became healthy; 102 people and 11 conversations remained available and a hash comparison confirmed complete chat history was unchanged. The discarded draft remained absent.
 - Google OAuth, invitations, OpenRouter spending enforcement, public hosting, and dataset re-import are explicitly deferred to the private VPS milestone. The current site remains local-only.
+
+
+## Delete a saved idea
+
+- Added a Delete idea control to every notebook card, with an inline confirmation that names the saved copy and reflection as the deletion target. The original chat is unaffected.
+- 30 automated tests and lint pass. New coverage verifies selected deletion, preservation of other ideas and original messages, absence from refreshed state, missing-ID handling, and saving the original answer again. Docker production build passed.

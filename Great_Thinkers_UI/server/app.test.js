@@ -14,6 +14,35 @@ import { buildReply, wantsDetailedAnswer } from "./conversation.js";
 import { packs } from "./knowledge.js";
 import { prepareSource } from "./dataset.js";
 
+test("deleting one saved idea preserves other ideas and the original chat and permits saving again", async (t) => {
+  const f = await fixture(t);
+  const r = await (await f.call("/rooms", "POST", { peopleIds: ["a"] })).json();
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "An idea to save",
+    })
+  ).text();
+  const original = f.store.get("rooms", r.id);
+  const body = { roomId: r.id, messageId: original.messages.at(-1).id };
+  const saved = await (await f.call("/insights", "POST", body)).json();
+  f.store.put("insights", {
+    ...saved,
+    id: "another-idea",
+    messageId: "another-message",
+  });
+  assert.equal((await f.call(`/insights/${saved.id}`, "DELETE")).status, 200);
+  assert.equal(f.store.get("insights", saved.id), null);
+  assert.deepEqual(f.store.get("rooms", r.id), original);
+  assert.deepEqual(
+    (await (await f.call("/state")).json()).insights.map((i) => i.id),
+    ["another-idea"],
+  );
+  assert.equal((await f.call(`/insights/${saved.id}`, "DELETE")).status, 404);
+  const resaved = await (await f.call("/insights", "POST", body)).json();
+  assert.notEqual(resaved.id, saved.id);
+  assert.equal(resaved.content, saved.content);
+});
+
 test("web datasets quarantine sources and drafts, preserve old chats, and export without private data", async (t) => {
   const f = await fixture(t);
   const p = await (await f.call("/research", "POST", { pageId: 5 })).json();
