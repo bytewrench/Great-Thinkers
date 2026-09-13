@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import Notebook from "./Notebook.jsx";
 import ResponseControls from "./ResponseControls.jsx";
 import {
   ArrowUp,
@@ -264,7 +265,9 @@ export default function App() {
       working ||
       !currentRoom ||
       !connection.online ||
-      !connection.models.some((m) => m.name === data.settings.model) ||
+      !connection.models.some(
+        (m) => m.name === (currentRoom.model || data.settings.model),
+      ) ||
       (!text.trim() && !retry)
     )
       return;
@@ -387,7 +390,11 @@ export default function App() {
         .includes(query.toLowerCase()),
   );
   const installed = connection.models.some(
-    (m) => m.name === data.settings.model,
+    (m) =>
+      m.name ===
+      (view === "chat" && currentRoom
+        ? currentRoom.model
+        : data.settings.model),
   );
   const modelReady = connection.online && installed;
 
@@ -448,6 +455,17 @@ export default function App() {
           >
             <Heart size={18} /> Saved minds{" "}
             <span>{people.filter((p) => p.favorite).length}</span>
+          </button>
+          <button
+            className={view === "notebook" ? "selected" : ""}
+            disabled={busy}
+            onClick={() => {
+              setView("notebook");
+              setMobileNav(false);
+            }}
+          >
+            <BookOpen size={18} /> Insights{" "}
+            <span>{(data.insights || []).length}</span>
           </button>
         </nav>
         <div className="sidebar-label">YOUR CONVERSATIONS</div>
@@ -517,7 +535,9 @@ export default function App() {
                 ? "Conversation"
                 : view === "favorites"
                   ? "Saved minds"
-                  : "Explore"}
+                  : view === "notebook"
+                    ? "Insights"
+                    : "Explore"}
             </span>
           </div>
           <button
@@ -545,7 +565,33 @@ export default function App() {
             </button>
           </div>
         )}
-        {view !== "chat" ? (
+        {view === "notebook" ? (
+          <Notebook
+            insights={data.insights || []}
+            rooms={data.rooms}
+            onOpenRoom={openRoom}
+            working={working}
+            Markdown={Markdown}
+            SourceList={SourceList}
+            onSave={async (insight) => {
+              let saved = false;
+              await act(async () => {
+                const updated = await api(`/insights/${insight.id}`, "PATCH", {
+                  title: insight.title,
+                  note: insight.note,
+                });
+                setData((d) => ({
+                  ...d,
+                  insights: d.insights.map((i) =>
+                    i.id === updated.id ? updated : i,
+                  ),
+                }));
+                saved = true;
+              });
+              return saved;
+            }}
+          />
+        ) : view !== "chat" ? (
           <div className="library-page">
             <section className="hero">
               <div className="eyebrow">
@@ -801,6 +847,10 @@ export default function App() {
                 </button>
               </div>
             </div>
+            <p className="room-model">
+              Conversation model: {currentRoom.model || data.settings.model}.
+              Changing the default applies to new conversations.
+            </p>
             <ResponseControls
               room={currentRoom}
               target={target}
@@ -899,6 +949,44 @@ export default function App() {
                       </p>
                     ) : (
                       <p className="muted">No reply was completed.</p>
+                    )}
+                    {m.role === "assistant" && m.status === "complete" && (
+                      <button
+                        className="save-insight"
+                        disabled={
+                          working ||
+                          (data.insights || []).some(
+                            (i) =>
+                              i.messageId === m.id &&
+                              i.roomId === currentRoom.id,
+                          )
+                        }
+                        onClick={() =>
+                          act(async () => {
+                            const insight = await api("/insights", "POST", {
+                              roomId: currentRoom.id,
+                              messageId: m.id,
+                            });
+                            setData((d) => ({
+                              ...d,
+                              insights: [
+                                insight,
+                                ...(d.insights || []).filter(
+                                  (i) => i.id !== insight.id,
+                                ),
+                              ],
+                            }));
+                          })
+                        }
+                      >
+                        <BookOpen size={14} />
+                        {(data.insights || []).some(
+                          (i) =>
+                            i.messageId === m.id && i.roomId === currentRoom.id,
+                        )
+                          ? "Saved to insights"
+                          : "Save insight"}
+                      </button>
                     )}
                     {m.sources?.length > 0 && (
                       <details className="message-sources">
@@ -1077,16 +1165,65 @@ export default function App() {
                 historical grounding.
               </p>
             )}
+            <div className="notice">
+              <strong>Stable identity</strong>
+              <p>
+                The original profile is preserved across research updates.
+                Personal notes and saved insights do not change it. Profile
+                version {detailPerson.identityVersion?.slice(0, 8)}. This is an
+                editorial interpretation, not a verified reconstruction.
+              </p>
+            </div>
+            {detailPerson.pendingResearch && (
+              <section className="research-review">
+                <h3>Review proposed research</h3>
+                <p>
+                  Confirm this is the same person and review the biography and
+                  source before allowing it into future replies. Accepting
+                  evidence does not rewrite the identity profile or verify every
+                  claim.
+                </p>
+                <strong>{detailPerson.pendingResearch.name}</strong>
+                <p>{detailPerson.pendingResearch.biography}</p>
+                <SourceList sources={[detailPerson.pendingResearch.source]} />
+                <div className="insight-actions">
+                  {["accept", "reject"].map((decision) => (
+                    <button
+                      key={decision}
+                      disabled={working}
+                      onClick={() =>
+                        act(async () =>
+                          updatePerson(
+                            await api(
+                              `/people/${detailPerson.id}/research-review`,
+                              "POST",
+                              {
+                                proposalId: detailPerson.pendingResearch.id,
+                                decision,
+                              },
+                            ),
+                          ),
+                        )
+                      }
+                    >
+                      {decision === "accept"
+                        ? "Accept as supporting evidence"
+                        : "Reject research"}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
             <details>
               <summary>Read the full character profile</summary>
               <Markdown>{detailPerson.content}</Markdown>
             </details>
             <label className="field-label" htmlFor="notes">
-              Your characterization notes
+              Your private notes
             </label>
             <p className="field-help">
-              Optional guidance for future replies. These notes are treated as
-              your interpretation, not historical evidence.
+              For your reference only. These notes are saved but are not sent to
+              the model or used to change the thinker.
             </p>
             <textarea
               id="notes"
@@ -1094,7 +1231,7 @@ export default function App() {
               maxLength={1500}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="For example: use accessible language and draw on their letters…"
+              placeholder="For example: read their letters next..."
             />
             <button
               disabled={working || notes === detailPerson.notes}
@@ -1209,7 +1346,8 @@ export default function App() {
           <div className="modal-content">
             <p className="modal-intro">
               Enter a name, then choose the right person. We’ll save their
-              Wikipedia biography and source locally.
+              Wikipedia biography and source locally. Updates to an existing
+              person wait for your review before influencing replies.
             </p>
             <form
               className="research-form"
@@ -1331,7 +1469,7 @@ export default function App() {
               account required.
             </p>
             <label className="field-label" htmlFor="model">
-              Conversation model
+              Default model for new conversations
             </label>
             <select
               id="model"

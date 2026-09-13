@@ -1,5 +1,5 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { searchPeople, researchPage } from "./research.js";
 import {
   DEFAULT_RESPONSE,
@@ -13,6 +13,12 @@ function fail(message, status = 400) {
 }
 const cleanPerson = (p) => ({
   ...p,
+  pendingResearch: p.pendingResearch
+    ? {
+        ...p.pendingResearch,
+        source: { ...p.pendingResearch.source, text: undefined },
+      }
+    : undefined,
   sources: p.sources.map(({ text: _text, ...s }) => s),
 });
 export function createApp({
@@ -38,8 +44,34 @@ export function createApp({
     next();
   });
   app.use(express.json({ limit: "64kb" }));
-  const person = (id) =>
-    store.get("people", id) || fail("Person not found.", 404);
+  const person = (id) => {
+    const p = store.get("people", id) || fail("Person not found.", 404);
+    let identity = store.get("identities", id);
+    if (!identity) {
+      identity = store.put("identities", {
+        id,
+        name: p.name,
+        content: p.content,
+        version: createHash("sha256").update(p.content).digest("hex"),
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return {
+      ...p,
+      content: identity.content,
+      identityVersion: identity.version,
+    };
+  };
+  // Freeze existing editorial identities before any research or conversation writes.
+  store.all("people").forEach((p) => person(p.id));
+  const roomModel = (r) =>
+    r.model ||
+    r.messages.findLast((m) => m.model)?.model ||
+    store.get("settings", "main")?.model ||
+    "llama3.1:8b";
+  store.all("rooms").forEach((r) => {
+    if (!r.model) store.put("rooms", { ...r, model: roomModel(r) });
+  });
   const room = (id) =>
     store.get("rooms", id) || fail("Conversation not found.", 404);
   const editable = (id) => {
@@ -59,7 +91,10 @@ export function createApp({
   };
   app.get("/api/state", (_req, res) =>
     res.json({
-      people: store.all("people").map(cleanPerson),
+      people: store.all("people").map((p) => cleanPerson(person(p.id))),
+      insights: store
+        .all("insights")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       rooms: store
         .all("rooms")
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -139,10 +174,104 @@ export function createApp({
       createdAt: new Date().toISOString(),
       content: `# ${result.name}\n\n${result.biography}\n\nPortray their documented perspective. Their exact speaking style is uncertain; do not invent signature phrases.`,
     };
-    p.biography = result.biography;
-    p.image = result.image;
-    p.sources = [result.source];
+    if (existing) {
+      p.pendingResearch = {
+        ...result,
+        id: randomUUID(),
+        proposedAt: new Date().toISOString(),
+      };
+    } else {
+      p.biography = result.biography;
+      p.image = result.image;
+      p.sources = [result.source];
+    }
+    store.put("people", p);
+    res.json(cleanPerson(person(p.id)));
+  });
+  app.post("/api/people/:id/research-review", (req, res) => {
+    const p = person(req.params.id);
+    const proposal = p.pendingResearch;
+    if (!proposal || proposal.id !== req.body.proposalId)
+      fail(
+        "This research proposal has changed. Reload and review it again.",
+        409,
+      );
+    if (!["accept", "reject"].includes(req.body.decision))
+      fail("Choose accept or reject.");
+    store.put("researchReviews", {
+      ...proposal,
+      id: proposal.id,
+      personId: p.id,
+      decision: req.body.decision,
+      reviewedAt: new Date().toISOString(),
+    });
+    if (req.body.decision === "accept") {
+      p.biography = proposal.biography;
+      p.image = proposal.image;
+      p.sources = [proposal.source];
+    }
+    delete p.pendingResearch;
     res.json(cleanPerson(store.put("people", p)));
+  });
+  app.post("/api/insights", (req, res) => {
+    const r = room(req.body.roomId);
+    const index = r.messages.findIndex((m) => m.id === req.body.messageId);
+    const message = r.messages[index];
+    if (
+      !message ||
+      message.role !== "assistant" ||
+      message.status !== "complete"
+    )
+      fail("Save a completed answer.");
+    const existing = store
+      .all("insights")
+      .find((i) => i.roomId === r.id && i.messageId === message.id);
+    if (existing) return res.json(existing);
+    const question =
+      r.messages.slice(0, index).findLast((m) => m.role === "user")?.content ||
+      "";
+    res.json(
+      store.put("insights", {
+        id: randomUUID(),
+        roomId: r.id,
+        roomTitle: r.title,
+        messageId: message.id,
+        title: question.slice(0, 120) || "Saved insight",
+        question,
+        content: message.content,
+        sources: message.sources || [],
+        model: message.model,
+        modelDigest: message.modelDigest,
+        identities: message.identities || [],
+        people: (message.personIds || [message.personId])
+          .filter(Boolean)
+          .map((id) => ({ id, name: person(id).name })),
+        kind: "AI interpretation",
+        note: "",
+        createdAt: new Date().toISOString(),
+      }),
+    );
+  });
+  app.patch("/api/insights/:id", (req, res) => {
+    const insight =
+      store.get("insights", req.params.id) || fail("Insight not found.", 404);
+    if (
+      typeof req.body.title !== "string" ||
+      !req.body.title.trim() ||
+      req.body.title.length > 120 ||
+      typeof req.body.note !== "string" ||
+      req.body.note.length > 3000
+    )
+      fail(
+        "Use a title up to 120 characters and notes up to 3,000 characters.",
+      );
+    res.json(
+      store.put("insights", {
+        ...insight,
+        title: req.body.title.trim(),
+        note: req.body.note,
+      }),
+    );
   });
   app.post("/api/rooms", (req, res) => {
     const ids = peopleIds(req.body.peopleIds);
@@ -152,6 +281,7 @@ export function createApp({
         id: randomUUID(),
         peopleIds: ids,
         ...DEFAULT_RESPONSE,
+        model: store.get("settings", "main")?.model || "llama3.1:8b",
         title: ids.map((id) => person(id).name.split(" ").at(-1)).join(" & "),
         messages: [],
         createdAt: now,
@@ -229,7 +359,8 @@ export function createApp({
         },
       ];
     }
-    const settings = store.get("settings", "main") || { model: "llama3.1:8b" };
+    const settings = { model: roomModel(r) };
+    r.model = settings.model;
     // Ollama can route cloud aliases through localhost. Verify local weights before sending conversation data.
     let modelInfo;
     try {
@@ -261,6 +392,24 @@ export function createApp({
         "Choose a model with local weights. Cloud models are not used by this app.",
         400,
       );
+    const tagsResponse = await fetch(`${ollamaUrl}/api/tags`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!tagsResponse.ok)
+      fail("Cannot verify the installed model version. Try again.", 503);
+    const installedModel = ((await tagsResponse.json()).models || []).find(
+      (m) => m.name === settings.model,
+    );
+    if (!installedModel?.digest)
+      fail(
+        "Cannot verify the installed model version. Choose an installed model for a new conversation.",
+      );
+    if (r.modelDigest && r.modelDigest !== installedModel.digest)
+      fail(
+        "This conversation's model has changed on disk. Restore that model version or start a new conversation to use the updated model.",
+        409,
+      );
+    r.modelDigest = installedModel.digest;
     if (busy.size)
       fail("Another conversation is using Ollama. Wait for it to finish.", 409);
     const controller = new AbortController();
@@ -305,6 +454,11 @@ export function createApp({
           content: "",
           status: "interrupted",
           model: settings.model,
+          modelDigest: r.modelDigest,
+          identities: step.personIds.map((id) => ({
+            personId: id,
+            version: person(id).identityVersion,
+          })),
           sources,
           createdAt: new Date().toISOString(),
         };

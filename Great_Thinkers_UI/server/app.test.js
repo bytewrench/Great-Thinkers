@@ -27,7 +27,16 @@ async function fixture(t) {
   const ollama = createServer(async (req, res) => {
     if (req.url === "/api/tags") {
       res.end(
-        JSON.stringify({ models: [{ name: "llama3.1:8b", size: 4700000000 }] }),
+        JSON.stringify({
+          models: [
+            {
+              name: "llama3.1:8b",
+              size: 4700000000,
+              digest:
+                mode === "changed" ? "different-version" : "fixture-version",
+            },
+          ],
+        }),
       );
       return;
     }
@@ -538,4 +547,150 @@ test("ordinary explanations stay brief while explicit depth requests expand", ()
   assert.equal(wantsDetailedAnswer("Explain that in more detail."), true);
   assert.equal(wantsDetailedAnswer("Tell me more."), true);
   assert.equal(wantsDetailedAnswer("Give details but keep it concise."), false);
+});
+
+test("insights preserve original answers and provenance without becoming persona memory", async (t) => {
+  const f = await fixture(t);
+  const r = await (await f.call("/rooms", "POST", { peopleIds: ["a"] })).json();
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "A useful idea?",
+    })
+  ).text();
+  const message = f.store.get("rooms", r.id).messages.at(-1);
+  const saved = await (
+    await f.call("/insights", "POST", {
+      roomId: r.id,
+      messageId: message.id,
+      content: "Replace the answer",
+    })
+  ).json();
+  assert.equal(saved.content, message.content);
+  assert.equal(saved.kind, "AI interpretation");
+  assert.equal(saved.identities[0].version.length, 64);
+  const again = await (
+    await f.call("/insights", "POST", { roomId: r.id, messageId: message.id })
+  ).json();
+  assert.equal(saved.id, again.id);
+  assert.equal(
+    (
+      await f.call("/insights", "POST", {
+        roomId: r.id,
+        messageId: r.messages[0]?.id || "bad",
+      })
+    ).status,
+    400,
+  );
+  await f.call(`/insights/${saved.id}`, "PATCH", {
+    title: "Keep this",
+    note: "SECRET_NOTE_REWRITE_IDENTITY",
+    content: "Replacement",
+  });
+  assert.equal(f.store.get("insights", saved.id).content, message.content);
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", { content: "What next?" })
+  ).text();
+  assert.doesNotMatch(
+    JSON.stringify(f.requests.at(-1)),
+    /SECRET_NOTE_REWRITE_IDENTITY/,
+  );
+  await f.call(`/rooms/${r.id}`, "DELETE");
+  const state = await (await f.call("/state")).json();
+  assert.equal(state.insights[0].title, "Keep this");
+  assert.equal(state.insights[0].content, message.content);
+});
+
+test("research is staged and reviewed, preserving identity and an audit trail", async (t) => {
+  const f = await fixture(t);
+  const identity = f.store.get("identities", "a");
+  const proposed = await (
+    await f.call("/research", "POST", { pageId: 5, personId: "a" })
+  ).json();
+  assert.equal(proposed.biography, "A biography.");
+  assert.equal(proposed.sources.length, 0);
+  assert.equal(proposed.pendingResearch.name, "New Mind");
+  assert.equal(proposed.pendingResearch.source.text, undefined);
+  assert.equal(
+    (
+      await f.call("/people/a/research-review", "POST", {
+        proposalId: "stale",
+        decision: "accept",
+      })
+    ).status,
+    409,
+  );
+  const accepted = await (
+    await f.call("/people/a/research-review", "POST", {
+      proposalId: proposed.pendingResearch.id,
+      decision: "accept",
+    })
+  ).json();
+  assert.match(accepted.biography, /documented life/);
+  assert.equal(accepted.content, identity.content);
+  assert.equal(accepted.identityVersion, identity.version);
+  assert.equal(accepted.pendingResearch, undefined);
+  assert.equal(f.store.all("researchReviews")[0].decision, "accept");
+  assert.match(f.store.all("researchReviews")[0].source.text, /Important work/);
+  const second = await (
+    await f.call("/research", "POST", { pageId: 5, personId: "a" })
+  ).json();
+  await f.call("/people/a/research-review", "POST", {
+    proposalId: second.pendingResearch.id,
+    decision: "reject",
+  });
+  assert.deepEqual(f.store.get("people", "a").sources, [
+    f.store.all("researchReviews").find((r) => r.decision === "accept").source,
+  ]);
+  await f.call("/people/a", "PATCH", {
+    notes: "SECRET_PERSONAL_REWRITE",
+    content: "Changed beliefs",
+  });
+  const r = await (await f.call("/rooms", "POST", { peopleIds: ["a"] })).json();
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "What do you think?",
+    })
+  ).text();
+  assert.doesNotMatch(
+    JSON.stringify(f.requests[0]),
+    /SECRET_PERSONAL_REWRITE|Changed beliefs/,
+  );
+  assert.match(f.requests[0].messages[0].content, /IDENTITY BOUNDARY/);
+  assert.equal(f.store.get("identities", "a").version, identity.version);
+});
+
+test("changing the default model does not switch an existing conversation", async (t) => {
+  const f = await fixture(t);
+  const r = await (await f.call("/rooms", "POST", { peopleIds: ["a"] })).json();
+  await f.call("/settings", "PUT", { model: "another-local-model" });
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", { content: "Hello" })
+  ).text();
+  assert.equal(f.requests[0].model, "llama3.1:8b");
+  const next = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a"] })
+  ).json();
+  assert.equal(next.model, "another-local-model");
+});
+
+test("changed model weights cannot silently alter an existing conversation", async (t) => {
+  const f = await fixture(t);
+  const r = await (await f.call("/rooms", "POST", { peopleIds: ["a"] })).json();
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "First question",
+    })
+  ).text();
+  assert.equal(f.store.get("rooms", r.id).modelDigest, "fixture-version");
+  f.mode("changed");
+  assert.equal(
+    (
+      await f.call(`/rooms/${r.id}/messages`, "POST", {
+        content: "Second question",
+      })
+    ).status,
+    409,
+  );
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.store.get("rooms", r.id).messages.length, 2);
 });

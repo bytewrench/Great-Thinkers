@@ -4,7 +4,7 @@ Checked on September 12, 2026 on Windows, Node.js 24.18.0, an RTX 5070 Laptop GP
 
 ## Automated
 
-- `npm test`: 14 passing tests. Isolated databases and a mock Ollama transport cover ordered group replies and shared context, targeted replies, streamed Unicode, cancellation, retry without duplicate visitor messages, conflicting writes, input validation, origin rejection, research identity/provenance, source retrieval limits, persistence, and cloud-alias rejection.
+- `npm test`: 18 passing tests. Isolated databases and a mock Ollama transport cover ordered group replies and shared context, targeted replies, streamed Unicode, cancellation, retry without duplicate visitor messages, conflicting writes, input validation, origin rejection, research identity/provenance, source retrieval limits, persistence, and cloud-alias rejection.
 - `npm run lint`: passed.
 - `npm run build`: passed.
 - `npm audit --audit-level=moderate`: zero reported vulnerabilities after dependency updates.
@@ -29,6 +29,14 @@ These checks preceded the concise-answer refactor; timings describe the previous
 - The generated answer mentioned the disagreement but offered an oversimplified compromise; the detailed example also contained weak historical reasoning. This verifies response format and follow-up behavior, not philosophical accuracy.
 - In the browser, verified combined replies and participant attribution, changed to individual answers, reloaded and confirmed the saved preference, then selected historical style and restored combined mode.
 - At 390 by 844 pixels, the answer selector and composer fit within the viewport and the document had no horizontal overflow.
+
+## Notebook and identity safeguards
+
+- 18 automated tests pass, including immutable insight snapshots, duplicate-save handling, survival after conversation deletion, private-note exclusion, staged research acceptance/rejection and stale-review rejection, stable identity hashes, model-name pinning, and blocking changed model digests before sending a new question.
+- Browser check: generated an answer with local Ollama, saved it to Insights, edited its title and reflection, and searched the saved content.
+- Live model check: the installed Llama 3.1 8B digest and both profile hashes were recorded with a completed answer. A real Wikipedia refresh of Marcus Aurelius was staged without replacing his current identity.
+- Browser check: reviewed and rejected the staged Marcus Aurelius refresh; the review controls disappeared. The notebook and reflection survived reload. At 390 pixels, the notebook had no horizontal overflow; the viewport was restored.
+- A local database backup was created before the identity migration. Older messages retain their original metadata; missing historic model/profile versions are not invented.
 
 ## Limits of this evidence
 

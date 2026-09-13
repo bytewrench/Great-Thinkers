@@ -1932,3 +1932,78 @@ summary:hover {
     font-size: 14px;
   }
 }
+
+.notebook {
+  max-width: 950px;
+  margin: 0 auto;
+  padding: 36px 28px;
+}
+.notebook-heading,
+.insight-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.notebook-heading {
+  justify-content: space-between;
+}
+.notebook h1 {
+  font-family: "Libre Caslon Display", serif;
+  font-size: 42px;
+  margin: 8px 0;
+}
+.insight-card,
+.research-review {
+  margin: 24px 0;
+  padding: 24px;
+  border: 1px solid #d8ded5;
+  border-radius: 14px;
+  background: #fffefa;
+}
+.insight-card h2 {
+  font-size: 21px;
+  overflow-wrap: anywhere;
+}
+.insight-card form label {
+  display: block;
+  margin: 12px 0;
+}
+.insight-card input,
+.insight-card textarea {
+  width: 100%;
+  display: block;
+  margin-top: 8px;
+}
+.insight-note {
+  background: #f0f3ed;
+  padding: 14px;
+  margin: 14px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.insight-actions {
+  margin-top: 16px;
+}
+.save-insight {
+  margin-top: 10px;
+  font-size: 12px;
+  padding: 5px 9px;
+}
+.room-model {
+  font-size: 11px;
+  margin: 0;
+  padding: 0 28px 10px;
+  color: #697469;
+}
+@media (max-width: 600px) {
+  .notebook {
+    padding: 22px 14px;
+  }
+  .insight-card {
+    padding: 16px;
+  }
+  .room-model {
+    padding: 0 14px 8px;
+  }
+}

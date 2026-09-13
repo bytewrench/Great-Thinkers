@@ -27,7 +27,18 @@ Open **http://127.0.0.1:3001**. In Settings, select an installed Ollama model. N
 - Switch Answer format to Individual answers for separate plain-language perspectives, or In character for historical style. The choice is saved per conversation; existing histories stay intact.
 - Receive streamed replies from a selected local Ollama model. Stop or retry an interrupted reply.
 - Reopen, rename, export, or delete saved conversations.
-- Add your own characterization notes without confusing them with historical evidence.
+- Save completed answers to a searchable Insights notebook; edit titles and reflections, reopen the original conversation, and export the notebook as JSON.
+- Keep private notes for each thinker. Notes and insights are never added to model prompts.
+
+## Identity and research boundaries
+
+Each thinker has a frozen identity record with a content hash. Existing original profiles remain editorial interpretations; newly discovered people start with the biography you selected, which is not an independently verified personality. Research, chat messages, insights, and notes cannot overwrite the stored identity through the app.
+
+Research updates for existing thinkers are staged. Review the proposed biography and linked source in the person's profile, then accept or reject them. Accepted research updates supporting evidence only; decisions and the proposed source text remain in an audit record. This is human review and provenance, not an automated factual-verification service. The initial selected biography for a new person establishes their baseline. Earlier imported sources are retained, not retroactively verified.
+
+Conversations retain their model name. On their next reply they also pin the installed model digest; subsequent changes to that model version are blocked with an explanation. Changing Settings affects new conversations. Existing conversations adopt their last recorded model when upgraded. Earlier messages cannot be assigned a model digest retroactively. Prompts ask the model to preserve worldview, identify conflicts, and distinguish modern interpretation from documented beliefs. These checks prevent silent data/model replacement but cannot guarantee faithful reasoning or eliminate prompt injection.
+
+Saved insights are independent snapshots of the original question, answer, people, sources supplied, and any recorded model/profile versions. They survive deletion of the source conversation. Your reflection remains separate from the original answer, and saving an insight never promotes AI output into historical evidence.
 
 ## Data and privacy
 
