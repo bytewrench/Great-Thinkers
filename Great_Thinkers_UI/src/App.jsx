@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import DatasetBuilder from "./DatasetBuilder.jsx";
 import FeaturedMinds from "./FeaturedMinds.jsx";
 import ResearchBrief from "./ResearchBrief.jsx";
+import ActivityToast from "./ActivityToast.jsx";
 import DiscussionMeter from "./DiscussionMeter.jsx";
 import Notebook from "./Notebook.jsx";
 import ResponseControls from "./ResponseControls.jsx";
@@ -173,6 +174,15 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [streamRoomId, setStreamRoomId] = useState(null);
+  const telemetry = useRef({
+    bytes: 0,
+    chunks: 0,
+    textChunks: 0,
+    samples: [],
+    startedAt: 0,
+    lastAt: 0,
+  });
   const [phase, setPhase] = useState("speaking");
   const [removeId, setRemoveId] = useState(null);
   const [working, setWorking] = useState(false);
@@ -282,6 +292,15 @@ export default function App() {
       (!text.trim() && !retry)
     )
       return;
+    setStreamRoomId(activeId);
+    telemetry.current = {
+      bytes: 0,
+      chunks: 0,
+      textChunks: 0,
+      samples: [],
+      startedAt: performance.now(),
+      lastAt: 0,
+    };
     setBusy(true);
     setPhase("speaking");
     setError("");
@@ -309,6 +328,7 @@ export default function App() {
         const e = JSON.parse(line);
         if (e.type === "phase") setPhase(e.phase);
         if (e.type === "room") updateRoom(e.room);
+        if (e.type === "token") telemetry.current.textChunks += 1;
         if (e.type === "token")
           setData((d) => ({
             ...d,
@@ -329,6 +349,15 @@ export default function App() {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        const now = performance.now(),
+          measured = telemetry.current;
+        measured.bytes += value.byteLength;
+        measured.chunks += 1;
+        measured.lastAt = now;
+        measured.samples = [
+          ...measured.samples.filter((s) => now - s.at < 8000),
+          { at: now, bytes: value.byteLength },
+        ].slice(-2000);
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop();
@@ -410,6 +439,13 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {busy && (
+        <ActivityToast
+          telemetry={telemetry}
+          room={data.rooms.find((r) => r.id === streamRoomId)}
+          phase={phase}
+        />
+      )}
       {mobileNav && (
         <button
           className="nav-scrim"

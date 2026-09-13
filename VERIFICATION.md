@@ -83,3 +83,10 @@ Next fidelity milestone: independently reviewed claim-to-passage checks and a br
 - Replaced fixed featured minds with four editorial groups on government, knowledge, art, and quantum theory. Each uses three relevant library profiles with contrasting approaches; dissent is invited, not scripted.
 - Browser verified a quantum group, switching to an art group with Another group, and a government group after reload. Selection excludes the last displayed group when alternatives exist and is persisted in browser storage. Returning to the library remounts the section and selects again.
 - Added a group conversation shortcut that fills a suggested question without sending it. ESLint and the Docker production build passed; the updated container is healthy. No inference is used for group selection.
+
+
+## Live exchange activity display
+
+- Added a floating glass activity panel with a shaded sphere, projected orbital paths, response-driven light trails, and an eight-second traffic trace. Browser ReadableStream byte lengths drive the response-data/rate counters and pulses; NDJSON text events drive the text-chunk counter. These are application-response bytes, including room snapshots, not network packet counts or model-token counts. No simulated completion percentage or additional model calls.
+- Speaker/comparison phase and latest current-question assessment determine the status and hue. Silence flattens the trace and shows Awaiting response. The panel can be minimized and disappears when the request finishes. Canvas rendering is bounded, pauses drawing in hidden tabs, and suppresses spatial motion under reduced-motion preference.
+- Browser-tested with a live two-person Watch discussion through Docker/Ollama. Observed counters growing from 6.3 KB to over 80 KB, inspected the rendered panel, and confirmed minimize changed to an Expand control. The test chat completed and was moved to recoverable Removed chats. Final small adjustments keep the panel attached to the originating chat and keep elapsed units inline. ESLint and Docker production build passed.

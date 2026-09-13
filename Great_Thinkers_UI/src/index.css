@@ -2284,3 +2284,202 @@ summary:hover {
   flex: 1 1 240px;
   margin: 0;
 }
+
+/* Live exchange instrument: light, depth and measured streaming activity. */
+.activity-toast {
+  position: fixed;
+  z-index: 45;
+  right: 25px;
+  bottom: 120px;
+  width: 338px;
+  border: 1px solid hsla(var(--signal-hue), 80%, 80%, 0.3);
+  border-radius: 22px;
+  color: #eaf9ff;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(
+    135deg,
+    rgba(29, 48, 62, 0.96),
+    rgba(6, 15, 29, 0.97) 44%,
+    rgba(6, 22, 31, 0.97)
+  );
+  box-shadow:
+    0 22px 70px #0008,
+    0 2px 3px #0006,
+    inset 0 1px 0 #ffffff38,
+    inset 0 -1px 0 #ffffff12,
+    0 0 35px hsla(var(--signal-hue), 90%, 50%, 0.12);
+  backdrop-filter: blur(24px);
+  animation: activity-arrive 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.activity-glint {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    120deg,
+    #ffffff0b,
+    transparent 38%,
+    #ffffff04 60%,
+    transparent 61%
+  );
+}
+.activity-toast header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 18px 5px;
+}
+.activity-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.19em;
+  color: hsl(var(--signal-hue), 85%, 77%);
+}
+.activity-toast header button {
+  width: 27px;
+  height: 27px;
+  padding: 4px;
+  min-height: 0;
+  border: 1px solid #ffffff21;
+  border-radius: 8px;
+  background: #ffffff06;
+  color: #b8ccda;
+  display: grid;
+  place-items: center;
+}
+.activity-toast header button:hover {
+  background: #ffffff18;
+  color: #fff;
+}
+.activity-title {
+  padding: 5px 20px 0;
+}
+.activity-title strong {
+  display: block;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  color: #f2fbff;
+}
+.activity-title > span {
+  display: block;
+  font-size: 12px;
+  color: #92aabb;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.activity-scene {
+  height: 215px;
+  position: relative;
+  margin-top: 4px;
+}
+.signal-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.activity-scene-label,
+.activity-rate {
+  position: absolute;
+  bottom: 48px;
+  font:
+    9px ui-monospace,
+    monospace;
+  letter-spacing: 0.08em;
+  color: #83a7bd;
+}
+.activity-scene-label {
+  left: 20px;
+}
+.activity-rate {
+  right: 20px;
+  color: hsl(var(--signal-hue), 85%, 76%);
+}
+.activity-metrics {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  margin: 4px 18px 0;
+  padding: 13px 0;
+  border-top: 1px solid #ffffff12;
+}
+.activity-metrics > div {
+  padding-left: 13px;
+  border-left: 1px solid #ffffff12;
+}
+.activity-metrics > div:first-child {
+  padding-left: 0;
+  border: 0;
+}
+.activity-metrics strong {
+  display: block;
+  font:
+    17px ui-monospace,
+    monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  color: #e4f6ff;
+}
+.activity-metrics strong small {
+  margin-left: 3px;
+  color: #91a9b9;
+  font-size: 12px;
+}
+.activity-metrics span {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  color: #91a9b9;
+}
+.activity-toast footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  background: #0003;
+  color: #7896aa;
+  border-top: 1px solid #ffffff09;
+  font-size: 9px;
+}
+.activity-compact {
+  width: 300px;
+  padding-bottom: 16px;
+}
+@keyframes activity-arrive {
+  from {
+    opacity: 0;
+    transform: perspective(800px) translateY(24px) rotateX(12deg) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(800px) translateY(0) rotateX(0) scale(1);
+  }
+}
+@media (max-width: 700px) {
+  .activity-toast {
+    right: 12px;
+    bottom: 100px;
+    width: min(310px, calc(100vw - 24px));
+  }
+  .activity-scene {
+    height: 165px;
+  }
+  .activity-title strong {
+    font-size: 18px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-toast {
+    animation: none;
+  }
+}
+
+.activity-metrics strong small {
+  display: inline;
+}
