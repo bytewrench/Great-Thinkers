@@ -1,258 +1,1457 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
-import Highlighter from 'react-highlight-words';
-import { Search, User } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import './index.css';
+import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import {
+  ArrowUp,
+  ArrowUpRight,
+  BookOpen,
+  Check,
+  ChevronRight,
+  CircleHelp,
+  Download,
+  Globe2,
+  Heart,
+  Library,
+  LoaderCircle,
+  Menu,
+  MessageCircle,
+  Plus,
+  Search,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 
-// Load all markdown files eagerly as raw text
-const mdModules = import.meta.glob('../../Great_Thinkers/**/*.md', { query: '?raw', import: 'default', eager: true });
-
-function App() {
-  const [thinkers, setThinkers] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedThinker, setSelectedThinker] = useState(null);
-  
-  const [lines, setLines] = useState([]);
-  const containerRef = useRef(null);
-  const cardRefs = useRef(new Map());
-
-  useEffect(() => {
-    const loadedThinkers = [];
-    const catSet = new Set();
-    
-    for (const path in mdModules) {
-      // Path format: ../../Great_Thinkers/Category_Name/Thinker_Name.md
-      const parts = path.split('/');
-      const filename = parts.pop();
-      const category = parts.pop().replace(/_/g, ' ');
-      const name = filename.replace('.md', '').replace(/_/g, ' ');
-      const content = mdModules[path];
-      
-      catSet.add(category);
-      loadedThinkers.push({
-        id: path,
-        name,
-        category,
-        content
-      });
-    }
-    
-    setCategories(['All', ...Array.from(catSet).sort()]);
-    setThinkers(loadedThinkers.sort((a, b) => a.name.localeCompare(b.name)));
-  }, []);
-
-  const searchWords = searchQuery.trim().toLowerCase().split(/\s+/).filter(w => w);
-
-  const filteredThinkers = thinkers.filter(t => {
-    const matchesCategory = activeCategory === 'All' || t.category === activeCategory;
-    const matchesSearch = searchWords.length === 0 || searchWords.every(word => 
-      t.name.toLowerCase().includes(word) || t.content.toLowerCase().includes(word)
-    );
-    return matchesCategory && matchesSearch;
+async function api(path, method = "GET", body) {
+  const response = await fetch(`/api${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
   });
-
-  const updateLines = () => {
-    // Only draw lines if there is a search query and multiple results
-    if (searchWords.length === 0 || filteredThinkers.length < 2 || selectedThinker) {
-      setLines([]);
-      return;
-    }
-    
-    if (!containerRef.current) return;
-    
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const newLines = [];
-    const points = [];
-
-    filteredThinkers.forEach(t => {
-      const el = cardRefs.current.get(t.id);
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        points.push({
-          id: t.id,
-          x: rect.left - containerRect.left + rect.width / 2,
-          y: rect.top - containerRect.top + rect.height / 2
-        });
-      }
-    });
-
-    // Create a fully connected web
-    for (let i = 0; i < points.length; i++) {
-      for (let j = i + 1; j < points.length; j++) {
-        newLines.push({
-          id: `${points[i].id}-${points[j].id}`,
-          x1: points[i].x,
-          y1: points[i].y,
-          x2: points[j].x,
-          y2: points[j].y
-        });
-      }
-    }
-    setLines(newLines);
-  };
-
-  useLayoutEffect(() => {
-    // Timeout allows Framer Motion animations to settle before measuring
-    const timeout = setTimeout(updateLines, 400);
-    window.addEventListener('resize', updateLines);
-    return () => {
-      clearTimeout(timeout);
-      window.removeEventListener('resize', updateLines);
-    };
-  }, [filteredThinkers.length, searchQuery, selectedThinker, activeCategory]);
-
+  const data = await response.json();
+  if (!response.ok)
+    throw new Error(data.error || "The request could not be completed.");
+  return data;
+}
+const initials = (name) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((n) => n[0])
+    .filter((c) => /\p{L}/u.test(c))
+    .slice(0, 2)
+    .join("");
+const shortCategory = (category) =>
+  ({
+    "Arts Literature and Culture": "Arts & culture",
+    "Philosophy and Ethics": "Philosophy",
+    "Politics Strategy and Leadership": "Leadership",
+    "Science and Mathematics": "Science",
+    "Your discoveries": "Your discoveries",
+  })[category] || category;
+const questions = [
+  "What makes a life well lived?",
+  "Is imagination more important than knowledge?",
+  "What would you question about the world today?",
+];
+function Avatar({ person, large = false }) {
+  const [imageFailed, setImageFailed] = useState(false);
   return (
-    <div className="app-container glass">
-      {/* SIDEBAR */}
-      <div className="sidebar glass">
-        <div className="sidebar-header">
-          <h2 style={{ color: 'var(--accent-color)', fontSize: '1.5rem', marginBottom: 0, border: 'none' }}>
-            Great Thinkers
-          </h2>
-          <p style={{ margin: 0, fontSize: '0.9rem' }}>The Library of Minds</p>
-        </div>
-        <div className="sidebar-content">
-          <h4 style={{ color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '0.8rem', marginTop: '1rem' }}>
-            Categories
-          </h4>
-          {categories.map(c => (
-            <div 
-              key={c} 
-              className={`category-item ${activeCategory === c ? 'active' : ''}`}
-              onClick={() => {
-                setActiveCategory(c);
-                setSelectedThinker(null);
-              }}
-            >
-              {c}
-            </div>
-          ))}
-        </div>
+    <span
+      className={`avatar ${large ? "large" : ""} tone-${(person?.name?.charCodeAt(0) || 0) % 4}`}
+    >
+      {person?.image && !imageFailed ? (
+        <img
+          src={person.image}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        initials(person?.name || "?")
+      )}
+    </span>
+  );
+}
+function Modal({ title, children, close, wide = false }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    dialog.showModal();
+    return () => dialog.close();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className={wide ? "wide" : ""}
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+      onClick={(e) => {
+        if (e.target === ref.current) close();
+      }}
+    >
+      <div className="modal-head">
+        <h2>{title}</h2>
+        <button className="icon" onClick={close} aria-label="Close dialog">
+          <X size={20} />
+        </button>
       </div>
-
-      {/* MAIN CONTENT */}
-      <div className="main-content">
-        <div className="top-bar glass">
-          <div style={{ position: 'relative', width: '400px' }}>
-            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input 
-              type="text" 
-              placeholder="Search concepts across all thinkers..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ paddingLeft: '40px' }}
-            />
-          </div>
-          <div>
-            <span style={{ color: 'var(--text-secondary)' }}>{filteredThinkers.length} thinkers found</span>
-          </div>
+      {children}
+    </dialog>
+  );
+}
+function Markdown({ children }) {
+  return (
+    <div className="prose">
+      <ReactMarkdown
+        components={{
+          a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
+          img: ({ alt }) => <span>{alt || "[Image omitted]"}</span>,
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
+function SourceList({ sources }) {
+  return (
+    <div className="sources">
+      {sources.map((s, i) => (
+        <div key={s.id}>
+          <a href={s.url} target="_blank" rel="noreferrer">
+            <span className="source-number">{i + 1}</span>
+            <span>
+              <strong>{s.title}</strong>
+              <small>
+                {s.publisher} · Retrieved{" "}
+                {new Date(s.accessedAt).toLocaleDateString()} · {s.license}
+              </small>
+            </span>
+            <ArrowUpRight size={16} />
+          </a>
+          {s.excerpt && (
+            <details className="source-excerpt">
+              <summary>Read the passages used</summary>
+              <p>{s.excerpt}</p>
+            </details>
+          )}
         </div>
-
-        <div className="content-area">
-          <div className="grid-container" ref={containerRef} style={{ position: 'relative', width: '100%', minHeight: '100%' }}>
-            
-            {/* BACKGROUND SVG NETWORK LINES */}
-            <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
-              <AnimatePresence>
-                {lines.map(line => (
-                  <motion.line
-                    key={line.id}
-                    x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-                    stroke="var(--accent-color)"
-                    strokeWidth="1.5"
-                    initial={{ opacity: 0, pathLength: 0 }}
-                    animate={{ opacity: 0.15, pathLength: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.8, ease: "easeInOut" }}
-                    style={{ filter: 'drop-shadow(0px 0px 4px var(--accent-color))' }}
-                  />
-                ))}
-              </AnimatePresence>
-            </svg>
-
-            <AnimatePresence mode="wait">
-              {selectedThinker ? (
-                <motion.div 
-                  key="view"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.3 }}
-                  className="markdown-body"
-                  style={{ position: 'relative', zIndex: 1 }}
-                >
-                  <button className="primary back-btn" onClick={() => setSelectedThinker(null)}>
-                    ← Back to Grid
-                  </button>
-                  <div className="glass-card" style={{ cursor: 'default' }}>
-                    <ReactMarkdown>{selectedThinker.content}</ReactMarkdown>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div 
-                  key="grid"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="grid"
-                  style={{ position: 'relative', zIndex: 1 }}
-                >
-                  {filteredThinkers.map(t => {
-                    // Extract a clean snippet text for the preview
-                    const snippet = t.content.substring(t.content.indexOf('## 1. Core Identity'), t.content.indexOf('## 2.')).replace('## 1. Core Identity & Biographical Summary', '').replace(/-/g, '').trim();
-
-                    return (
-                      <motion.div 
-                        key={t.id}
-                        layoutId={t.id}
-                        ref={(el) => {
-                          if (el) cardRefs.current.set(t.id, el);
-                          else cardRefs.current.delete(t.id);
-                        }}
-                        className="glass-card"
-                        onClick={() => setSelectedThinker(t)}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        style={{ display: 'flex', flexDirection: 'column' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                          <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <User size={20} color="var(--accent-color)" />
-                          </div>
-                          <div>
-                            <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>
-                              <Highlighter
-                                highlightStyle={{ backgroundColor: 'var(--accent-color)', color: '#000', borderRadius: '2px', padding: '0 2px' }}
-                                searchWords={searchWords}
-                                autoEscape={true}
-                                textToHighlight={t.name}
-                              />
-                            </h3>
-                            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--accent-color)' }}>{t.category}</p>
-                          </div>
-                        </div>
-                        <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                           <Highlighter
-                              highlightStyle={{ backgroundColor: 'var(--accent-color)', color: '#000', borderRadius: '2px', padding: '0 2px' }}
-                              searchWords={searchWords}
-                              autoEscape={true}
-                              textToHighlight={snippet}
-                            />
-                        </div>
-                      </motion.div>
-                    )
-                  })}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
 
-export default App;
+export default function App() {
+  const [data, setData] = useState(null);
+  const [connection, setConnection] = useState({
+    online: false,
+    models: [],
+    checking: true,
+  });
+  const [view, setView] = useState("library");
+  const [activeId, setActiveId] = useState(null);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All minds");
+  const [detail, setDetail] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [target, setTarget] = useState("");
+  const [selection, setSelection] = useState([]);
+  const [researchName, setResearchName] = useState("");
+  const [results, setResults] = useState(null);
+  const [researchFor, setResearchFor] = useState(null);
+  const [notes, setNotes] = useState("");
+  const [mobileNav, setMobileNav] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [roomTitle, setRoomTitle] = useState("");
+  const end = useRef(null);
+  const scrollArea = useRef(null);
+  const follow = useRef(true);
+  const currentRoom = data?.rooms.find((r) => r.id === activeId);
+  const detailPerson = data?.people.find((p) => p.id === detail);
+
+  useEffect(() => {
+    let live = true;
+    api("/state")
+      .then((state) => {
+        if (live) setData(state);
+      })
+      .catch((e) => {
+        if (live) setError(e.message);
+      });
+    const check = () =>
+      api("/models")
+        .then((state) => {
+          if (live) setConnection({ ...state, checking: false });
+        })
+        .catch(() => {
+          if (live)
+            setConnection({ online: false, models: [], checking: false });
+        });
+    check();
+    const interval = setInterval(check, 30000);
+    return () => {
+      live = false;
+      clearInterval(interval);
+    };
+  }, []);
+  useEffect(() => {
+    if (follow.current) end.current?.scrollIntoView({ behavior: "instant" });
+  }, [currentRoom?.messages]);
+  const updatePerson = (p) =>
+    setData((d) => ({
+      ...d,
+      people: [...d.people.filter((x) => x.id !== p.id), p],
+    }));
+  const updateRoom = (r) =>
+    setData((d) => ({
+      ...d,
+      rooms: [r, ...d.rooms.filter((x) => x.id !== r.id)],
+    }));
+  async function act(fn) {
+    setWorking(true);
+    setError("");
+    try {
+      await fn();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+  function openRoom(id) {
+    if (busy) return;
+    setActiveId(id);
+    setView("chat");
+    setTarget("");
+    setDraft("");
+    setMobileNav(false);
+    follow.current = true;
+  }
+  async function createRoom(ids) {
+    const r = await api("/rooms", "POST", { peopleIds: ids });
+    updateRoom(r);
+    setDetail(null);
+    setModal(null);
+    openRoom(r.id);
+  }
+  function openPicker(invite = false) {
+    setSelection(invite ? currentRoom.peopleIds : []);
+    setPickerSearch("");
+    setModal(invite ? "invite" : "roundtable");
+  }
+  function openResearch(p) {
+    setResearchFor(p?.id || null);
+    setResearchName(p?.name || "");
+    setResults(null);
+    setDetail(null);
+    setModal("research");
+  }
+  async function send(text = draft, retry = false) {
+    if (
+      busy ||
+      !currentRoom ||
+      !connection.online ||
+      !connection.models.some((m) => m.name === data.settings.model) ||
+      (!text.trim() && !retry)
+    )
+      return;
+    setBusy(true);
+    setError("");
+    follow.current = true;
+    let accepted = false;
+    try {
+      const response = await fetch(`/api/rooms/${activeId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: text,
+          target: target || undefined,
+          retry,
+        }),
+      });
+      if (!response.ok) throw new Error((await response.json()).error);
+      accepted = true;
+      setDraft("");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finished = false;
+      function event(line) {
+        if (!line.trim()) return;
+        const e = JSON.parse(line);
+        if (e.type === "room") updateRoom(e.room);
+        if (e.type === "token")
+          setData((d) => ({
+            ...d,
+            rooms: d.rooms.map((r) =>
+              r.id === activeId
+                ? {
+                    ...r,
+                    messages: r.messages.map((m) =>
+                      m.id === e.id ? { ...m, content: m.content + e.text } : m,
+                    ),
+                  }
+                : r,
+            ),
+          }));
+        if (e.type === "error") setError(e.error);
+        if (e.type === "done") finished = true;
+      }
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        lines.forEach(event);
+      }
+      buffer += decoder.decode();
+      event(buffer);
+      if (!finished)
+        throw new Error(
+          "The connection was interrupted. Your saved conversation will reload.",
+        );
+    } catch (e) {
+      setError(e.message);
+      if (accepted) {
+        try {
+          setData(await api("/state"));
+        } catch {
+          /* Preserve the displayed conversation when offline. */
+        }
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  function exportRoom() {
+    const text =
+      `# ${currentRoom.title}\n\nAI simulations, not the real people.\n\n` +
+      currentRoom.messages
+        .map(
+          (m) =>
+            `## ${m.role === "user" ? "You" : m.name}\n\n${m.content}${m.status && m.status !== "complete" ? "\n\n[Reply incomplete]" : ""}\n\n${(m.sources || []).map((s, i) => `[${i + 1}] ${s.title}: ${s.url} (${s.license})`).join("\n")}`,
+        )
+        .join("\n\n");
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "text/markdown" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "great-thinkers-conversation.md";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  if (!data)
+    return (
+      <div className="loading-page">
+        <BookOpen size={40} />
+        <h1>Great Thinkers</h1>
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <button onClick={() => window.location.reload()}>Try again</button>
+          </>
+        ) : (
+          <p>Opening your library…</p>
+        )}
+      </div>
+    );
+  const people = [...data.people].sort((a, b) => a.name.localeCompare(b.name));
+  const featured = ["Marcus Aurelius", "Albert Einstein", "Virginia Woolf"]
+    .map((n) => people.find((p) => p.name === n))
+    .filter(Boolean);
+  const categories = [
+    "All minds",
+    ...new Set(people.map((p) => shortCategory(p.category))),
+  ];
+  const filtered = people.filter(
+    (p) =>
+      (view !== "favorites" || p.favorite) &&
+      (category === "All minds" || shortCategory(p.category) === category) &&
+      `${p.name} ${p.biography} ${p.content}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  );
+  const installed = connection.models.some(
+    (m) => m.name === data.settings.model,
+  );
+  const modelReady = connection.online && installed;
+
+  return (
+    <div className="app-shell">
+      {mobileNav && (
+        <button
+          className="nav-scrim"
+          aria-label="Close navigation"
+          onClick={() => setMobileNav(false)}
+        />
+      )}
+      <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
+        <button
+          className="brand"
+          disabled={busy}
+          onClick={() => {
+            setView("library");
+            setMobileNav(false);
+          }}
+        >
+          <span className="brand-mark">
+            <BookOpen size={24} />
+          </span>
+          <span>
+            Great Thinkers<small>A LIBRARY OF MINDS</small>
+          </span>
+        </button>
+        <button
+          className="new-conversation"
+          disabled={busy}
+          onClick={() => openPicker()}
+        >
+          <Plus size={18} /> New conversation
+        </button>
+        <nav aria-label="Main navigation">
+          <button
+            className={view === "library" ? "selected" : ""}
+            disabled={busy}
+            onClick={() => {
+              setView("library");
+              setCategory("All minds");
+              setQuery("");
+              setMobileNav(false);
+            }}
+          >
+            <Library size={18} /> The library <span>{people.length}</span>
+          </button>
+          <button
+            className={view === "favorites" ? "selected" : ""}
+            disabled={busy}
+            onClick={() => {
+              setView("favorites");
+              setCategory("All minds");
+              setQuery("");
+              setMobileNav(false);
+            }}
+          >
+            <Heart size={18} /> Saved minds{" "}
+            <span>{people.filter((p) => p.favorite).length}</span>
+          </button>
+        </nav>
+        <div className="sidebar-label">YOUR CONVERSATIONS</div>
+        <div className="conversation-list">
+          {!data.rooms.length ? (
+            <p className="sidebar-hint">
+              Good conversations start
+              <br />
+              with a little curiosity.
+            </p>
+          ) : (
+            data.rooms.map((r) => (
+              <button
+                key={r.id}
+                disabled={busy}
+                className={
+                  view === "chat" && r.id === activeId ? "active-room" : ""
+                }
+                onClick={() => openRoom(r.id)}
+              >
+                <MessageCircle size={16} />
+                <span>
+                  {r.title}
+                  <small>
+                    {r.peopleIds
+                      .map((id) =>
+                        people
+                          .find((p) => p.id === id)
+                          ?.name.split(" ")
+                          .at(-1),
+                      )
+                      .join(" · ")}
+                  </small>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+        <div className="sidebar-bottom">
+          <div className="local-note">
+            <ShieldCheck size={17} />
+            <span>
+              Your thoughts stay here
+              <small>Conversations saved on this computer</small>
+            </span>
+          </div>
+          <button onClick={() => setModal("settings")} disabled={busy}>
+            <Settings size={17} /> Settings{" "}
+            <span className={`status-dot ${modelReady ? "online" : ""}`} />
+          </button>
+        </div>
+      </aside>
+      <main className={view === "chat" ? "chat-main" : ""}>
+        <header className="topbar">
+          <div className="breadcrumb">
+            <button
+              className="icon mobile-menu"
+              aria-label="Open navigation"
+              onClick={() => setMobileNav(true)}
+            >
+              <Menu size={20} />
+            </button>
+            <span>THE LIBRARY OF MINDS</span>
+            <ChevronRight size={14} />
+            <span>
+              {view === "chat"
+                ? "Conversation"
+                : view === "favorites"
+                  ? "Saved minds"
+                  : "Explore"}
+            </span>
+          </div>
+          <button
+            className="connection"
+            disabled={busy}
+            onClick={() => setModal("settings")}
+          >
+            <span className={`status-dot ${modelReady ? "online" : ""}`} />
+            {connection.checking
+              ? "Connecting…"
+              : modelReady
+                ? "Local AI connected"
+                : "Set up local AI"}
+          </button>
+        </header>
+        {error && (
+          <div className="error-banner" role="alert">
+            <span>{error}</span>
+            <button
+              className="icon"
+              aria-label="Dismiss error"
+              onClick={() => setError("")}
+            >
+              <X size={17} />
+            </button>
+          </div>
+        )}
+        {view !== "chat" ? (
+          <div className="library-page">
+            <section className="hero">
+              <div className="eyebrow">
+                <span /> IDEAS HAVE NO EXPIRATION DATE
+              </div>
+              <h1>
+                A meeting of minds.
+                <br />
+                <em>Across time.</em>
+              </h1>
+              <p>
+                Ask a question. Challenge an idea. Find a new perspective.
+                <br className="desktop-break" /> A hundred remarkable minds, and
+                room for one more: yours.
+              </p>
+              <div className="hero-actions">
+                <button className="primary" onClick={() => openPicker()}>
+                  <Users size={17} /> Start a roundtable{" "}
+                  <ArrowUpRight size={17} />
+                </button>
+                <button className="text-button" onClick={() => openResearch()}>
+                  <Plus size={17} /> Discover someone new
+                </button>
+              </div>
+              <div className="hero-art" aria-hidden="true">
+                <div className="orbit orbit-one" />
+                <div className="orbit orbit-two" />
+                <div className="orbit orbit-three" />
+                <span className="orbit-word word-one">CURIOSITY</span>
+                <span className="orbit-word word-two">PERSPECTIVE</span>
+                <div className="art-center">&</div>
+                <span className="orbit-point point-one" />
+                <span className="orbit-point point-two" />
+                <span className="orbit-point point-three" />
+              </div>
+            </section>
+            {view === "library" && !query && category === "All minds" && (
+              <section className="featured-section">
+                <div className="section-heading">
+                  <h2>A good place to begin</h2>
+                  <span>THREE DIFFERENT WAYS OF SEEING</span>
+                </div>
+                <div className="featured-grid">
+                  {featured.map((p, i) => (
+                    <button
+                      className={`featured-card feature-${i}`}
+                      key={p.id}
+                      onClick={() => {
+                        setDetail(p.id);
+                        setNotes(p.notes);
+                      }}
+                    >
+                      <div className="featured-top">
+                        <span>
+                          0{i + 1} / {shortCategory(p.category)}
+                        </span>
+                        <ArrowUpRight size={21} />
+                      </div>
+                      <div className="featured-body">
+                        <Avatar person={p} large />
+                        <div>
+                          <h3>{p.name}</h3>
+                          <p>
+                            {
+                              [
+                                "Find clarity in what you can control.",
+                                "Make room for a thought experiment.",
+                                "Look closer at the life within.",
+                              ][i]
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      <span className="featured-footer">
+                        Meet this mind <span>→</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+            <section className="catalog">
+              <div className="section-heading catalog-heading">
+                <div>
+                  <h2>
+                    {view === "favorites"
+                      ? "Your saved minds"
+                      : "Explore the library"}
+                  </h2>
+                  <p>
+                    {filtered.length} {filtered.length === 1 ? "mind" : "minds"}{" "}
+                    to get to know
+                  </p>
+                </div>
+                <label className="search-box">
+                  <Search size={17} />
+                  <input
+                    aria-label="Search minds and ideas"
+                    placeholder="Search a name or an idea…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </label>
+              </div>
+              <div
+                className="category-tabs"
+                role="group"
+                aria-label="Filter minds by category"
+              >
+                {categories.map((c) => (
+                  <button
+                    key={c}
+                    className={category === c ? "active" : ""}
+                    onClick={() => setCategory(c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <div className="people-grid">
+                {filtered.map((p) => (
+                  <article className="person-card" key={p.id}>
+                    <button
+                      className="person-main"
+                      onClick={() => {
+                        setDetail(p.id);
+                        setNotes(p.notes);
+                      }}
+                    >
+                      <Avatar person={p} />
+                      <small>{shortCategory(p.category)}</small>
+                      <h3>{p.name}</h3>
+                      <p>{p.biography.replace(/^Background & Era:\s*/, "")}</p>
+                    </button>
+                    <div className="person-footer">
+                      <span>
+                        {p.sources.length ? (
+                          <>
+                            <Globe2 size={12} /> Source connected
+                          </>
+                        ) : (
+                          "From the original collection"
+                        )}
+                      </span>
+                      <button
+                        className={`icon favorite ${p.favorite ? "saved" : ""}`}
+                        disabled={working}
+                        aria-label={`${p.favorite ? "Unsave" : "Save"} ${p.name}`}
+                        aria-pressed={p.favorite}
+                        onClick={() =>
+                          act(async () =>
+                            updatePerson(
+                              await api(`/people/${p.id}`, "PATCH", {
+                                favorite: !p.favorite,
+                              }),
+                            ),
+                          )
+                        }
+                      >
+                        <Heart
+                          size={16}
+                          fill={p.favorite ? "currentColor" : "none"}
+                        />
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {!filtered.length && (
+                <div className="empty">
+                  <Search size={30} />
+                  <h3>
+                    {view === "favorites"
+                      ? "Make this library your own"
+                      : "An undiscovered mind?"}
+                  </h3>
+                  <p>
+                    {view === "favorites"
+                      ? "Save people using the heart on their card."
+                      : "Try another name or research someone new."}
+                  </p>
+                  <button onClick={() => openResearch()}>
+                    <Plus size={16} /> Discover a person
+                  </button>
+                </div>
+              )}
+            </section>
+            <footer className="page-footer">
+              <BookOpen size={16} />
+              <span>Inspired by real lives. Open to new ideas.</span>
+              <button onClick={() => setModal("about")}>
+                About these conversations <CircleHelp size={14} />
+              </button>
+            </footer>
+          </div>
+        ) : currentRoom ? (
+          <>
+            <div className="room-header">
+              <div>
+                <button
+                  className="room-title"
+                  disabled={busy}
+                  onClick={() => {
+                    setRoomTitle(currentRoom.title);
+                    setModal("rename");
+                  }}
+                >
+                  <h1>{currentRoom.title}</h1>
+                </button>
+                <div className="participants">
+                  {currentRoom.peopleIds.map((id) => {
+                    const p = people.find((p) => p.id === id);
+                    return (
+                      <button
+                        key={id}
+                        disabled={busy}
+                        onClick={() => {
+                          setDetail(id);
+                          setNotes(p.notes);
+                        }}
+                      >
+                        <Avatar person={p} />
+                        <span>{p.name}</span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    className="invite-button"
+                    disabled={busy}
+                    onClick={() => openPicker(true)}
+                  >
+                    <Plus size={15} /> Invite / manage
+                  </button>
+                </div>
+              </div>
+              <div className="room-tools">
+                <button
+                  className="icon"
+                  title="Export conversation"
+                  aria-label="Export conversation"
+                  disabled={busy || !currentRoom.messages.length}
+                  onClick={exportRoom}
+                >
+                  <Download size={18} />
+                </button>
+                <button
+                  className="icon"
+                  aria-label="Delete conversation"
+                  disabled={busy}
+                  onClick={() => setModal("delete")}
+                >
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            </div>
+            <div
+              className="messages"
+              ref={scrollArea}
+              onScroll={() => {
+                const el = scrollArea.current;
+                follow.current =
+                  el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+              }}
+            >
+              {!currentRoom.messages.length && (
+                <div className="conversation-welcome">
+                  <span className="welcome-mark">
+                    <Sparkles size={27} />
+                  </span>
+                  <div className="eyebrow">
+                    A LITTLE CURIOSITY GOES A LONG WAY
+                  </div>
+                  <h2>Where shall we begin?</h2>
+                  <p>
+                    {currentRoom.peopleIds.length > 1
+                      ? "Bring a question to the table. Each mind will offer a perspective and respond to the others."
+                      : "An old perspective can open a new door. Ask about life, ideas, or a question you have been carrying."}
+                  </p>
+                  <div className="question-suggestions">
+                    {questions.map((q) => (
+                      <button
+                        key={q}
+                        disabled={!modelReady}
+                        onClick={() => send(q)}
+                      >
+                        {q}
+                        <ArrowUpRight size={16} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {currentRoom.messages.map((m, i) => (
+                <article key={m.id} className={`message ${m.role}`}>
+                  <div className="message-avatar">
+                    {m.role === "user" ? (
+                      <span className="avatar you">Y</span>
+                    ) : (
+                      <Avatar
+                        person={people.find((p) => p.id === m.personId)}
+                      />
+                    )}
+                  </div>
+                  <div className="message-body">
+                    <div className="message-heading">
+                      <strong>{m.role === "user" ? "You" : m.name}</strong>
+                      <span>
+                        {m.role === "user" ? "THE CURIOUS ONE" : "AI PORTRAYAL"}
+                      </span>
+                    </div>
+                    {m.content ? (
+                      <Markdown>{m.content}</Markdown>
+                    ) : busy && i === currentRoom.messages.length - 1 ? (
+                      <p className="thinking">
+                        <LoaderCircle size={15} className="spin" /> Considering
+                        your question…
+                      </p>
+                    ) : (
+                      <p className="muted">No reply was completed.</p>
+                    )}
+                    {m.sources?.length > 0 && (
+                      <details className="message-sources">
+                        <summary>
+                          {m.sources.length} source supplied to this reply
+                        </summary>
+                        <SourceList sources={m.sources} />
+                      </details>
+                    )}
+                    {m.status && m.status !== "complete" && !busy && (
+                      <div className="incomplete">
+                        <span>{m.error || "Reply interrupted."}</span>
+                        {i === currentRoom.messages.length - 1 && (
+                          <button
+                            disabled={!modelReady}
+                            onClick={() => send("", true)}
+                          >
+                            Retry reply
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))}
+              <div ref={end} />
+            </div>
+            <div className="composer-area">
+              {!modelReady && (
+                <div className="offline-note">
+                  {connection.online
+                    ? "Choose an installed model to begin."
+                    : "Open Ollama on this computer to start chatting."}
+                  <button onClick={() => setModal("settings")}>
+                    Connection settings
+                  </button>
+                </div>
+              )}
+              <form
+                className="composer"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  send();
+                }}
+              >
+                <label className="sr-only" htmlFor="message">
+                  Your message
+                </label>
+                <textarea
+                  id="message"
+                  placeholder="Bring your curiosity to the conversation…"
+                  value={draft}
+                  maxLength={4000}
+                  disabled={busy}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey &&
+                      !e.nativeEvent.isComposing
+                    ) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
+                  rows={2}
+                />
+                <div className="composer-bottom">
+                  <label>
+                    Speaking to{" "}
+                    <select
+                      aria-label="Who should reply"
+                      value={target}
+                      disabled={busy}
+                      onChange={(e) => setTarget(e.target.value)}
+                    >
+                      <option value="">
+                        {currentRoom.peopleIds.length > 1
+                          ? "Everyone at the table"
+                          : people.find(
+                              (p) => p.id === currentRoom.peopleIds[0],
+                            )?.name}
+                      </option>
+                      {currentRoom.peopleIds.length > 1 &&
+                        currentRoom.peopleIds.map((id) => (
+                          <option key={id} value={id}>
+                            {people.find((p) => p.id === id)?.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <div className="send-controls">
+                    <small>
+                      {draft.length > 3500
+                        ? `${draft.length}/4000`
+                        : "Enter to send"}
+                    </small>
+                    {busy ? (
+                      <button
+                        type="button"
+                        className="send-button"
+                        aria-label="Stop reply"
+                        onClick={() =>
+                          act(() => api(`/rooms/${activeId}/stop`, "POST", {}))
+                        }
+                      >
+                        <Square size={16} />
+                      </button>
+                    ) : (
+                      <button
+                        className="send-button"
+                        type="submit"
+                        aria-label="Send message"
+                        disabled={!draft.trim() || !modelReady}
+                      >
+                        <ArrowUp size={20} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </form>
+              <p className="simulation-note">
+                AI portrayals informed by history. Responses may be inaccurate.{" "}
+                <button onClick={() => setModal("about")}>Learn more</button>
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="empty">
+            <h2>Choose a conversation</h2>
+            <button onClick={() => openPicker()}>Start a conversation</button>
+          </div>
+        )}
+      </main>
+
+      {detailPerson && (
+        <Modal wide title="Meet this mind" close={() => setDetail(null)}>
+          <div className="profile-hero">
+            <Avatar person={detailPerson} large />
+            <div className="eyebrow">
+              {shortCategory(detailPerson.category)}
+            </div>
+            <h1>{detailPerson.name}</h1>
+            <p>{detailPerson.biography}</p>
+            <div className="profile-actions">
+              <button
+                className="primary"
+                disabled={working || busy}
+                onClick={() => act(() => createRoom([detailPerson.id]))}
+              >
+                <MessageCircle size={17} /> Begin a conversation
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => openResearch(detailPerson)}
+              >
+                <Globe2 size={16} />
+                {detailPerson.sources.length
+                  ? "Update research"
+                  : "Connect a source"}
+              </button>
+            </div>
+          </div>
+          <div className="profile-content">
+            {detailPerson.sources.length ? (
+              <>
+                <h3>Research sources</h3>
+                <SourceList sources={detailPerson.sources} />
+              </>
+            ) : (
+              <p className="notice">
+                This original profile is an editorial starting point, with no
+                verified sources attached yet. Connect a source for better
+                historical grounding.
+              </p>
+            )}
+            <details>
+              <summary>Read the full character profile</summary>
+              <Markdown>{detailPerson.content}</Markdown>
+            </details>
+            <label className="field-label" htmlFor="notes">
+              Your characterization notes
+            </label>
+            <p className="field-help">
+              Optional guidance for future replies. These notes are treated as
+              your interpretation, not historical evidence.
+            </p>
+            <textarea
+              id="notes"
+              rows={3}
+              maxLength={1500}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="For example: use accessible language and draw on their letters…"
+            />
+            <button
+              disabled={working || notes === detailPerson.notes}
+              onClick={() =>
+                act(async () =>
+                  updatePerson(
+                    await api(`/people/${detailPerson.id}`, "PATCH", { notes }),
+                  ),
+                )
+              }
+            >
+              <Check size={16} /> Save notes
+            </button>
+          </div>
+        </Modal>
+      )}
+      {(modal === "roundtable" || modal === "invite") && (
+        <Modal
+          title={
+            modal === "invite"
+              ? "Who’s at the table?"
+              : "Start a meeting of minds"
+          }
+          close={() => setModal(null)}
+        >
+          <div className="modal-content">
+            <p className="modal-intro">
+              Choose up to three people. Each brings a different way of seeing.
+            </p>
+            <label className="search-box">
+              <Search size={17} />
+              <input
+                autoFocus
+                placeholder="Find a mind…"
+                aria-label="Find a participant"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+              />
+            </label>
+            <div className="selection-count">
+              {selection.length} of 3 seats filled
+            </div>
+            <div className="picker-list">
+              {people
+                .filter((p) =>
+                  p.name.toLowerCase().includes(pickerSearch.toLowerCase()),
+                )
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    className={selection.includes(p.id) ? "chosen" : ""}
+                    disabled={
+                      !selection.includes(p.id) && selection.length === 3
+                    }
+                    onClick={() =>
+                      setSelection((ids) =>
+                        ids.includes(p.id)
+                          ? ids.filter((id) => id !== p.id)
+                          : [...ids, p.id],
+                      )
+                    }
+                  >
+                    <Avatar person={p} />
+                    <span>
+                      <strong>{p.name}</strong>
+                      <small>{shortCategory(p.category)}</small>
+                    </span>
+                    <span className="checkbox">
+                      {selection.includes(p.id) && <Check size={14} />}
+                    </span>
+                  </button>
+                ))}
+            </div>
+            <button
+              className="primary full"
+              disabled={working || !selection.length}
+              onClick={() =>
+                act(async () => {
+                  if (modal === "invite") {
+                    updateRoom(
+                      await api(`/rooms/${activeId}`, "PATCH", {
+                        peopleIds: selection,
+                      }),
+                    );
+                    setTarget("");
+                    setModal(null);
+                  } else await createRoom(selection);
+                })
+              }
+            >
+              {working
+                ? "Preparing…"
+                : modal === "invite"
+                  ? "Update the table"
+                  : "Begin the conversation"}
+              <ArrowUpRight size={17} />
+            </button>
+          </div>
+        </Modal>
+      )}
+      {modal === "research" && (
+        <Modal
+          title={
+            researchFor
+              ? "Connect biographical research"
+              : "Discover a new mind"
+          }
+          close={() => {
+            if (!working) setModal(null);
+          }}
+        >
+          <div className="modal-content">
+            <p className="modal-intro">
+              Enter a name, then choose the right person. We’ll save their
+              Wikipedia biography and source locally.
+            </p>
+            <form
+              className="research-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                act(async () =>
+                  setResults(
+                    await api(
+                      `/research?q=${encodeURIComponent(researchName)}`,
+                    ),
+                  ),
+                );
+              }}
+            >
+              <input
+                aria-label="Person to research"
+                autoFocus
+                placeholder="e.g. Carl Jung, Hannah Arendt…"
+                value={researchName}
+                maxLength={100}
+                onChange={(e) => {
+                  setResearchName(e.target.value);
+                  setResults(null);
+                }}
+              />
+              <button
+                className="primary"
+                disabled={working || researchName.trim().length < 2}
+              >
+                {working ? (
+                  <LoaderCircle size={17} className="spin" />
+                ) : (
+                  <Search size={17} />
+                )}{" "}
+                Search
+              </button>
+            </form>
+            <p className="field-help">
+              Best for people with published biographies. Check the description
+              before adding someone; names can be ambiguous.
+            </p>
+            {results?.length === 0 && (
+              <div className="empty">
+                <h3>No matching pages</h3>
+                <p>Try their full name or add an occupation.</p>
+              </div>
+            )}
+            <div className="research-results">
+              {results?.map((p) => (
+                <button
+                  key={p.pageId}
+                  disabled={working}
+                  onClick={() =>
+                    act(async () => {
+                      const added = await api("/research", "POST", {
+                        pageId: p.pageId,
+                        personId: researchFor || undefined,
+                      });
+                      updatePerson(added);
+                      setModal(null);
+                      setDetail(added.id);
+                      setNotes(added.notes);
+                    })
+                  }
+                >
+                  <Avatar person={p} />
+                  <span>
+                    <strong>{p.name}</strong>
+                    <small>{p.description}</small>
+                  </span>
+                  <Plus size={18} />
+                </button>
+              ))}
+            </div>
+            {working && (
+              <p className="thinking" role="status">
+                <LoaderCircle size={16} className="spin" /> Researching… this
+                can take a few moments.
+              </p>
+            )}
+            {error && (
+              <p className="dialog-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="research-foot">
+              <Globe2 size={17} /> Uses Wikipedia · No paid research API
+            </div>
+          </div>
+        </Modal>
+      )}
+      {modal === "settings" && (
+        <Modal title="Your local studio" close={() => setModal(null)}>
+          <div className="modal-content">
+            <div className="settings-status">
+              <span
+                className={`status-dot ${connection.online ? "online" : ""}`}
+              />
+              <strong>
+                {connection.online
+                  ? "Ollama is connected"
+                  : "Ollama is offline"}
+              </strong>
+              <button
+                onClick={() =>
+                  act(async () =>
+                    setConnection({
+                      ...(await api("/models")),
+                      checking: false,
+                    }),
+                  )
+                }
+              >
+                Refresh
+              </button>
+            </div>
+            <p className="modal-intro">
+              Conversations run on this computer. No AI subscription or cloud
+              account required.
+            </p>
+            <label className="field-label" htmlFor="model">
+              Conversation model
+            </label>
+            <select
+              id="model"
+              value={data.settings.model}
+              disabled={working || !connection.online}
+              onChange={(e) =>
+                act(async () => {
+                  const settings = await api("/settings", "PUT", {
+                    model: e.target.value,
+                  });
+                  setData((d) => ({ ...d, settings }));
+                })
+              }
+            >
+              {!installed && (
+                <option value={data.settings.model}>
+                  {data.settings.model} — unavailable
+                </option>
+              )}
+              {connection.models.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.name} · {(m.size / 1e9).toFixed(1)} GB
+                </option>
+              ))}
+            </select>
+            <p className="field-help">
+              Start with Llama 3.1 8B on this computer. Larger models can take
+              longer, especially in group conversations.
+            </p>
+            {!connection.online && (
+              <div className="notice">
+                Open the Ollama desktop app, or run <code>ollama serve</code> in
+                a terminal, then click Refresh.
+              </div>
+            )}
+            <div className="settings-detail">
+              <ShieldCheck size={21} />
+              <div>
+                <h3>Stored locally, by design</h3>
+                <p>
+                  Profiles, sources, and conversations are saved in a local
+                  SQLite database. New research connects to Wikipedia; existing
+                  conversations can work offline with Ollama.
+                </p>
+              </div>
+            </div>
+            <div className="settings-detail">
+              <Users size={21} />
+              <div>
+                <h3>One model. Many perspectives.</h3>
+                <p>
+                  People reply one at a time. Long conversations use recent
+                  turns; earlier messages remain saved and exportable.
+                </p>
+              </div>
+            </div>
+            {error && <p className="dialog-error">{error}</p>}
+          </div>
+        </Modal>
+      )}
+      {modal === "about" && (
+        <Modal
+          title="Real ideas. Imagined conversations."
+          close={() => setModal(null)}
+        >
+          <div className="modal-content">
+            <p>
+              Great Thinkers is a place to explore ideas through AI portrayals
+              of remarkable people. You are speaking with a model, not the
+              person or their representative.
+            </p>
+            <p>
+              The original collection includes editorial profiles and simulated
+              monologues. Connected Wikipedia biographies provide additional
+              context, but they are a starting point rather than exhaustive
+              research.
+            </p>
+            <p>
+              Source links show material supplied to the model. Citation numbers
+              are generated by the model and are not independently verified.
+              Check important claims against the sources.
+            </p>
+            <p>
+              Answers about modern situations are interpretations. Models can
+              misrepresent beliefs or invent details, especially when
+              documentation is limited.
+            </p>
+            <div className="notice">
+              Research and portraits are retrieved from Wikipedia. Article text
+              is available under CC BY-SA 4.0; follow each source page for
+              attribution, history, and image licensing.
+            </div>
+          </div>
+        </Modal>
+      )}
+      {modal === "rename" && (
+        <Modal title="Name this conversation" close={() => setModal(null)}>
+          <form
+            className="modal-content"
+            onSubmit={(e) => {
+              e.preventDefault();
+              act(async () => {
+                updateRoom(
+                  await api(`/rooms/${activeId}`, "PATCH", {
+                    title: roomTitle,
+                  }),
+                );
+                setModal(null);
+              });
+            }}
+          >
+            <input
+              autoFocus
+              aria-label="Conversation title"
+              value={roomTitle}
+              maxLength={100}
+              onChange={(e) => setRoomTitle(e.target.value)}
+            />
+            <button
+              className="primary full"
+              disabled={working || !roomTitle.trim()}
+            >
+              Save title
+            </button>
+          </form>
+        </Modal>
+      )}
+      {modal === "delete" && (
+        <Modal title="Delete this conversation?" close={() => setModal(null)}>
+          <div className="modal-content">
+            <p>
+              “{currentRoom.title}” and its messages will be permanently
+              removed. You can export it first.
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => setModal(null)}>Keep conversation</button>
+              <button
+                className="danger"
+                disabled={working}
+                onClick={() =>
+                  act(async () => {
+                    await api(`/rooms/${activeId}`, "DELETE");
+                    setData((d) => ({
+                      ...d,
+                      rooms: d.rooms.filter((r) => r.id !== activeId),
+                    }));
+                    setActiveId(null);
+                    setView("library");
+                    setModal(null);
+                  })
+                }
+              >
+                Delete conversation
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
