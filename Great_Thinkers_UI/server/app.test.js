@@ -7,12 +7,8 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { openStore } from "./store.js";
 import { createApp } from "./app.js";
-import {
-  evidenceFor,
-  buildMessages,
-  searchPeople,
-  researchPage,
-} from "./research.js";
+import { evidenceFor, searchPeople, researchPage } from "./research.js";
+import { buildReply, wantsDetailedAnswer } from "./conversation.js";
 
 const person = (id) => ({
   id,
@@ -119,6 +115,10 @@ test("roundtable streams Unicode, persists ordered speakers, and shares earlier 
   const r = await (
     await f.call("/rooms", "POST", { peopleIds: ["a", "b"] })
   ).json();
+  await f.call(`/rooms/${r.id}`, "PATCH", {
+    responseMode: "individual",
+    voice: "plain",
+  });
   const response = await f.call(`/rooms/${r.id}/messages`, "POST", {
     content: "What is wisdom?",
   });
@@ -326,7 +326,11 @@ test("retrieval preserves long paragraphs and selects relevant evidence; prompt 
       content: `${i} ${"history ".repeat(150)}`,
     })),
   };
-  const prompt = buildMessages(p, room, evidence);
+  const { messages: prompt } = buildReply(
+    { kind: "individual", personId: p.id, personIds: [p.id], voice: "plain" },
+    room,
+    () => p,
+  );
   const context = prompt
     .slice(1, -1)
     .map((m) => m.content)
@@ -334,6 +338,170 @@ test("retrieval preserves long paragraphs and selects relevant evidence; prompt 
   assert.match(context, /49 history/);
   assert.doesNotMatch(context, /^0 history/);
   assert.ok(context.length < 11000);
+});
+
+test("new and existing rooms default to one plain synthesis without rewriting history", async (t) => {
+  const f = await fixture(t);
+  f.store.put("rooms", {
+    id: "old",
+    peopleIds: ["a", "b"],
+    messages: [
+      {
+        role: "assistant",
+        name: "Thinker a",
+        content: "An old reply",
+        status: "complete",
+      },
+    ],
+    updatedAt: "2020",
+  });
+  const state = await (await f.call("/state")).json();
+  assert.equal(state.rooms[0].responseMode, "synthesis");
+  assert.equal(state.rooms[0].voice, "plain");
+  const r = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a", "b"] })
+  ).json();
+  assert.equal(r.responseMode, "synthesis");
+  assert.equal(r.voice, "plain");
+  await (
+    await f.call("/rooms/old/messages", "POST", {
+      content: "What is useful here?",
+    })
+  ).text();
+  const saved = f.store.get("rooms", "old");
+  assert.equal(saved.messages[0].content, "An old reply");
+  assert.equal(saved.messages.length, 3);
+  assert.equal(saved.messages.at(-1).kind, "synthesis");
+  assert.deepEqual(saved.messages.at(-1).personIds, ["a", "b"]);
+  assert.equal(f.requests.length, 1);
+});
+
+test("synthesis considers differing profiles and assigns distinct source numbers; followups retain the answer", async (t) => {
+  const f = await fixture(t);
+  for (const [id, view] of [
+    ["a", "Supports central authority"],
+    ["b", "Rejects central authority"],
+  ]) {
+    const p = person(id);
+    p.content = view;
+    p.sources = [
+      {
+        id: "source-" + id,
+        title: "Biography " + id,
+        text: view,
+        url: "https://example.org/" + id,
+      },
+    ];
+    f.store.put("people", p);
+  }
+  const r = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a", "b"] })
+  ).json();
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "Should authority be centralized?",
+    })
+  ).text();
+  const last = f.store.get("rooms", r.id).messages.at(-1);
+  assert.equal(last.name, "Combined answer");
+  assert.equal(last.sources.length, 2);
+  const prompt = f.requests[0].messages[0].content;
+  assert.match(prompt, /Supports central authority/);
+  assert.match(prompt, /Rejects central authority/);
+  assert.match(prompt, /\[1\] Biography a/);
+  assert.match(prompt, /\[2\] Biography b/);
+  assert.match(prompt, /do not manufacture consensus/);
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "Explain that in more detail, with examples.",
+    })
+  ).text();
+  assert.match(
+    f.requests[1].messages.map((m) => m.content).join("\n"),
+    /Earlier combined answer.*\nA café perspective/s,
+  );
+  assert.ok(
+    f.requests[1].options.num_predict > f.requests[0].options.num_predict,
+  );
+});
+
+test("answer preferences persist, historical voice is opt-in, and a targeted question produces one individual reply", async (t) => {
+  const f = await fixture(t);
+  const r = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a", "b"] })
+  ).json();
+  assert.equal(
+    (await f.call(`/rooms/${r.id}`, "PATCH", { responseMode: "invalid" }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (await f.call(`/rooms/${r.id}`, "PATCH", { voice: "invalid" })).status,
+    400,
+  );
+  await f.call(`/rooms/${r.id}`, "PATCH", {
+    responseMode: "individual",
+    voice: "historical",
+  });
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "Hello",
+      target: "a",
+    })
+  ).text();
+  assert.match(
+    f.requests[0].messages[0].content,
+    /characteristic voice and period vocabulary/,
+  );
+  await f.call(`/rooms/${r.id}`, "PATCH", { responseMode: "synthesis" });
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", {
+      content: "Just you, please",
+      target: "b",
+    })
+  ).text();
+  const last = f.store.get("rooms", r.id).messages.at(-1);
+  assert.equal(last.kind, "individual");
+  assert.equal(last.personId, "b");
+  assert.equal(last.voice, "plain");
+  assert.match(f.requests[1].messages[0].content, /everyday modern language/);
+  const state = await (await f.call("/state")).json();
+  assert.equal(state.rooms[0].responseMode, "synthesis");
+});
+
+test("retry preserves a stopped synthesis even after changing answer format", async (t) => {
+  const f = await fixture(t);
+  f.mode("wait");
+  const r = await (
+    await f.call("/rooms", "POST", { peopleIds: ["a", "b"] })
+  ).json();
+  const stream = await f.call(`/rooms/${r.id}/messages`, "POST", {
+    content: "Help me decide.",
+  });
+  const reader = stream.body.getReader();
+  let seen = "";
+  while (!seen.includes("token")) {
+    const { value } = await reader.read();
+    seen += new TextDecoder().decode(value);
+  }
+  await f.call(`/rooms/${r.id}/stop`, "POST", {});
+  while (!(await reader.read()).done) {
+    /* Wait for persistence. */
+  }
+  await f.call(`/rooms/${r.id}`, "PATCH", {
+    responseMode: "individual",
+    voice: "historical",
+  });
+  f.mode("ok");
+  await (
+    await f.call(`/rooms/${r.id}/messages`, "POST", { retry: true })
+  ).text();
+  const messages = f.store.get("rooms", r.id).messages;
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].kind, "synthesis");
+  assert.equal(messages[1].voice, "plain");
+  assert.equal(messages[1].status, "complete");
+  assert.equal(f.requests.length, 2);
 });
 
 test("SQLite data survives a close and reopen", () => {
@@ -362,4 +530,12 @@ test("cloud aliases are rejected before conversation data leaves the app", async
   assert.equal(result.status, 400);
   assert.equal(f.requests.length, 0);
   assert.equal(f.store.get("rooms", room.id).messages.length, 0);
+});
+
+test("ordinary explanations stay brief while explicit depth requests expand", () => {
+  assert.equal(wantsDetailedAnswer("Should I spend more time reading?"), false);
+  assert.equal(wantsDetailedAnswer("Explain private property."), false);
+  assert.equal(wantsDetailedAnswer("Explain that in more detail."), true);
+  assert.equal(wantsDetailedAnswer("Tell me more."), true);
+  assert.equal(wantsDetailedAnswer("Give details but keep it concise."), false);
 });

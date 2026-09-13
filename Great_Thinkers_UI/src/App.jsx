@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import ResponseControls from "./ResponseControls.jsx";
 import {
   ArrowUp,
   ArrowUpRight,
@@ -260,6 +261,7 @@ export default function App() {
   async function send(text = draft, retry = false) {
     if (
       busy ||
+      working ||
       !currentRoom ||
       !connection.online ||
       !connection.models.some((m) => m.name === data.settings.model) ||
@@ -799,6 +801,18 @@ export default function App() {
                 </button>
               </div>
             </div>
+            <ResponseControls
+              room={currentRoom}
+              target={target}
+              disabled={busy || working}
+              onChange={(preferences) =>
+                act(async () =>
+                  updateRoom(
+                    await api(`/rooms/${activeId}`, "PATCH", preferences),
+                  ),
+                )
+              }
+            />
             <div
               className="messages"
               ref={scrollArea}
@@ -819,8 +833,8 @@ export default function App() {
                   <h2>Where shall we begin?</h2>
                   <p>
                     {currentRoom.peopleIds.length > 1
-                      ? "Bring a question to the table. Each mind will offer a perspective and respond to the others."
-                      : "An old perspective can open a new door. Ask about life, ideas, or a question you have been carrying."}
+                      ? "Ask a question and get one clear answer informed by the people at your table. Important disagreements are included. Switch formats to hear them individually."
+                      : "Ask a question and get a short, clear answer. Ask follow-up questions whenever you want more detail."}
                   </p>
                   <div className="question-suggestions">
                     {questions.map((q) => (
@@ -841,6 +855,10 @@ export default function App() {
                   <div className="message-avatar">
                     {m.role === "user" ? (
                       <span className="avatar you">Y</span>
+                    ) : m.kind === "synthesis" ? (
+                      <span className="avatar synthesis-avatar">
+                        <Users size={18} />
+                      </span>
                     ) : (
                       <Avatar
                         person={people.find((p) => p.id === m.personId)}
@@ -851,9 +869,27 @@ export default function App() {
                     <div className="message-heading">
                       <strong>{m.role === "user" ? "You" : m.name}</strong>
                       <span>
-                        {m.role === "user" ? "THE CURIOUS ONE" : "AI PORTRAYAL"}
+                        {m.role === "user"
+                          ? ""
+                          : m.kind === "synthesis"
+                            ? "AI SYNTHESIS"
+                            : m.voice === "plain"
+                              ? "AI PERSPECTIVE"
+                              : "AI PORTRAYAL"}
                       </span>
                     </div>
+                    {m.kind === "synthesis" && (
+                      <p className="synthesis-context">
+                        Informed by{" "}
+                        {m.personIds
+                          .map(
+                            (id) =>
+                              people.find((p) => p.id === id)?.name ||
+                              "a former participant",
+                          )
+                          .join(", ")}
+                      </p>
+                    )}
                     {m.content ? (
                       <Markdown>{m.content}</Markdown>
                     ) : busy && i === currentRoom.messages.length - 1 ? (
@@ -867,7 +903,9 @@ export default function App() {
                     {m.sources?.length > 0 && (
                       <details className="message-sources">
                         <summary>
-                          {m.sources.length} source supplied to this reply
+                          {m.sources.length}{" "}
+                          {m.sources.length === 1 ? "source" : "sources"}{" "}
+                          supplied to this reply
                         </summary>
                         <SourceList sources={m.sources} />
                       </details>
@@ -913,10 +951,10 @@ export default function App() {
                 </label>
                 <textarea
                   id="message"
-                  placeholder="Bring your curiosity to the conversation…"
+                  placeholder="Ask a question or request more detail…"
                   value={draft}
                   maxLength={4000}
-                  disabled={busy}
+                  disabled={busy || working}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
                     if (
@@ -932,7 +970,7 @@ export default function App() {
                 />
                 <div className="composer-bottom">
                   <label>
-                    Speaking to{" "}
+                    Ask{" "}
                     <select
                       aria-label="Who should reply"
                       value={target}
@@ -976,7 +1014,7 @@ export default function App() {
                         className="send-button"
                         type="submit"
                         aria-label="Send message"
-                        disabled={!draft.trim() || !modelReady}
+                        disabled={!draft.trim() || !modelReady || working}
                       >
                         <ArrowUp size={20} />
                       </button>
@@ -1345,8 +1383,10 @@ export default function App() {
               <div>
                 <h3>One model. Many perspectives.</h3>
                 <p>
-                  People reply one at a time. Long conversations use recent
-                  turns; earlier messages remain saved and exportable.
+                  Combined answers bring the selected perspectives into one
+                  short reply. Individual answers are optional. Long
+                  conversations use recent turns; earlier messages remain saved
+                  and exportable.
                 </p>
               </div>
             </div>

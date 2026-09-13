@@ -23,6 +23,8 @@ Open **http://127.0.0.1:3001**. In Settings, select an installed Ollama model. N
 - Discover someone by name. Wikipedia search and Wikidata's human classification narrow the choices; confirm the correct biography before importing it.
 - Connect research to an original profile or refresh its source. Biographical text, source URL, article revision, and retrieval date are saved locally.
 - Chat with one person or a roundtable of up to three. Address everyone or one participant, and change participants between turns.
+- Get one brief combined answer by default, with important disagreement stated plainly. Ask for more detail in a follow-up.
+- Switch Answer format to Individual answers for separate plain-language perspectives, or In character for historical style. The choice is saved per conversation; existing histories stay intact.
 - Receive streamed replies from a selected local Ollama model. Stop or retry an interrupted reply.
 - Reopen, rename, export, or delete saved conversations.
 - Add your own characterization notes without confusing them with historical evidence.
@@ -41,7 +43,7 @@ These are explicit AI simulations, not the real people. The original Markdown pr
 
 For each reply, the app selects a bounded set of source passages by keyword relevance and supplies them to the model. Visible source links identify material supplied; the model's citation numbers and historical claims are **not independently verified**. Model quality, source quality, and the specificity of the question affect accuracy. Modern views are extrapolations.
 
-The model sees recent conversation turns within a character budget and uses an 8,192-token context setting. Earlier turns remain stored and exportable but are not permanent model memory. Participants answer sequentially; retry regenerates only the interrupted participant. This keeps an 8 GB GPU practical. Larger models may spill into system RAM and run slowly.
+The model sees recent conversation turns within a character budget and uses an 8,192-token context setting. Earlier turns remain stored and exportable but are not permanent model memory. Combined mode makes one model call informed by all selected profiles, rather than running a hidden debate or vote. Individual mode runs participants sequentially. Retry preserves the interrupted reply's original format and participants. This keeps an 8 GB GPU practical. Larger models may spill into system RAM and run slowly.
 
 Wikipedia article text is licensed under CC BY-SA 4.0; source cards link to the article and its contributor history. Wikimedia image licensing varies; follow the source article's image link for its attribution and license.
 

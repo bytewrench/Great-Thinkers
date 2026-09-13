@@ -1,11 +1,12 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
+import { searchPeople, researchPage } from "./research.js";
 import {
-  searchPeople,
-  researchPage,
-  evidenceFor,
-  buildMessages,
-} from "./research.js";
+  DEFAULT_RESPONSE,
+  responsePreferences,
+  replyPlan,
+  buildReply,
+} from "./conversation.js";
 
 function fail(message, status = 400) {
   throw Object.assign(new Error(message), { status });
@@ -61,7 +62,8 @@ export function createApp({
       people: store.all("people").map(cleanPerson),
       rooms: store
         .all("rooms")
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map((r) => ({ ...r, ...responsePreferences(r) })),
       settings: store.get("settings", "main") || {
         id: "main",
         model: "llama3.1:8b",
@@ -149,6 +151,7 @@ export function createApp({
       store.put("rooms", {
         id: randomUUID(),
         peopleIds: ids,
+        ...DEFAULT_RESPONSE,
         title: ids.map((id) => person(id).name.split(" ").at(-1)).join(" & "),
         messages: [],
         createdAt: now,
@@ -159,6 +162,20 @@ export function createApp({
   app.patch("/api/rooms/:id", (req, res) => {
     editable(req.params.id);
     const r = room(req.params.id);
+    if (
+      req.body.responseMode !== undefined &&
+      !["synthesis", "individual"].includes(req.body.responseMode)
+    )
+      fail("Choose a valid answer format.");
+    if (
+      req.body.voice !== undefined &&
+      !["plain", "historical"].includes(req.body.voice)
+    )
+      fail("Choose a valid voice.");
+    Object.assign(r, responsePreferences(r));
+    if (req.body.responseMode !== undefined)
+      r.responseMode = req.body.responseMode;
+    if (req.body.voice !== undefined) r.voice = req.body.voice;
     if (req.body.peopleIds) r.peopleIds = peopleIds(req.body.peopleIds);
     if (typeof req.body.title === "string")
       r.title = req.body.title.trim().slice(0, 100) || r.title;
@@ -185,9 +202,10 @@ export function createApp({
       typeof req.body.content === "string" ? req.body.content.trim() : "";
     if (!retry && (!content || content.length > 4000))
       fail("Write a message of up to 4,000 characters.");
-    let targets = req.body.target ? [req.body.target] : r.peopleIds;
+    const targets = req.body.target ? [req.body.target] : r.peopleIds;
     if (targets.some((id) => !r.peopleIds.includes(id)))
       fail("That person is not in this conversation.");
+    let plan = replyPlan(r, targets, person);
     if (retry) {
       const last = r.messages.at(-1);
       if (
@@ -196,11 +214,20 @@ export function createApp({
         !["error", "interrupted"].includes(last.status)
       )
         fail("There is no interrupted reply to retry.");
-      if (!r.peopleIds.includes(last.personId))
+      const originalPeople = last.personIds || [last.personId];
+      if (originalPeople.some((id) => !r.peopleIds.includes(id)))
         fail(
-          "Invite this person back to the table before retrying their reply.",
+          "Invite the original participants back before retrying this reply.",
         );
-      targets = [last.personId];
+      plan = [
+        {
+          kind: last.kind || "individual",
+          personId: last.personId,
+          personIds: originalPeople,
+          name: last.name,
+          voice: last.voice || "historical",
+        },
+      ];
     }
     const settings = store.get("settings", "main") || { model: "llama3.1:8b" };
     // Ollama can route cloud aliases through localhost. Verify local weights before sending conversation data.
@@ -268,23 +295,17 @@ export function createApp({
     emit({ type: "room", room: r });
     let current;
     try {
-      for (const id of targets) {
+      for (const step of plan) {
         controller.signal.throwIfAborted();
-        const p = person(id);
-        const evidence = evidenceFor(
-          p,
-          r.messages.filter((m) => m.role === "user").at(-1).content,
-        );
-        const messages = buildMessages(p, r, evidence);
+        const { messages, sources, maxTokens } = buildReply(step, r, person);
         current = {
           id: randomUUID(),
           role: "assistant",
-          personId: id,
-          name: p.name,
+          ...step,
           content: "",
           status: "interrupted",
           model: settings.model,
-          sources: evidence.map(({ text, ...s }) => ({ ...s, excerpt: text })),
+          sources,
           createdAt: new Date().toISOString(),
         };
         r.messages.push(current);
@@ -297,7 +318,11 @@ export function createApp({
             model: settings.model,
             messages,
             stream: true,
-            options: { num_ctx: 8192, num_predict: 550, temperature: 0.4 },
+            options: {
+              num_ctx: 8192,
+              num_predict: maxTokens,
+              temperature: 0.35,
+            },
           }),
           signal: controller.signal,
         });
