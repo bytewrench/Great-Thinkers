@@ -1,3 +1,4 @@
+import ActivityGraphic from "./ActivityToast.jsx";
 import { useState } from "react";
 import { ChevronDown, Eye, Play } from "lucide-react";
 const states = {
@@ -8,7 +9,7 @@ const states = {
 };
 export default function DiscussionMeter({
   room,
-  people,
+  telemetry,
   busy,
   phase,
   onContinue,
@@ -31,58 +32,22 @@ export default function DiscussionMeter({
   const watching = room.responseMode === "watch";
   const reason =
     event?.reason ||
-    (watching
-      ? "Start a topic and watch each perspective develop."
-      : "Choose Watch discussion to see how the speakers relate.");
-  const participants = room.peopleIds
-    .map((id) => people.find((p) => p.id === id))
-    .filter(Boolean);
-  const positions =
-    participants.length === 2
-      ? [
-          [30, 45],
-          [130, 45],
-        ]
-      : [
-          [80, 18],
-          [30, 72],
-          [130, 72],
-        ];
+    (room.peopleIds.length === 1
+      ? "Ready for your next question."
+      : watching
+        ? "Start a topic and watch each perspective develop."
+        : "Choose Watch discussion to see how the speakers relate.");
   return (
     <section
       className={`discussion-meter ${busy ? "is-live" : ""}`}
       style={{ "--discussion-color": state.color }}
       aria-label="Discussion atmosphere"
     >
-      <div className="discussion-graph" aria-hidden="true">
-        <svg viewBox="0 0 160 100">
-          {participants.map((p, i) =>
-            participants
-              .slice(i + 1)
-              .map((q, j) => (
-                <line
-                  key={p.id + q.id}
-                  x1={positions[i][0]}
-                  y1={positions[i][1]}
-                  x2={positions[i + j + 1][0]}
-                  y2={positions[i + j + 1][1]}
-                />
-              )),
-          )}
-          {participants.map((p, i) => (
-            <g key={p.id} className={speaker === p.name ? "speaker-node" : ""}>
-              <circle cx={positions[i][0]} cy={positions[i][1]} r="16" />
-              <text x={positions[i][0]} y={positions[i][1] + 4}>
-                {p.name
-                  .split(" ")
-                  .map((w) => w[0])
-                  .slice(0, 2)
-                  .join("")}
-              </text>
-            </g>
-          ))}
-        </svg>
-      </div>
+      <ActivityGraphic
+        telemetry={telemetry}
+        active={busy}
+        state={event?.state}
+      />
       <div className="discussion-copy">
         <div className="discussion-kicker">
           <Eye size={13} /> AT THE TABLE {busy && <span className="live-dot" />}

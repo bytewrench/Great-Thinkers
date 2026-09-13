@@ -3,8 +3,8 @@ import ReactMarkdown from "react-markdown";
 import DatasetBuilder from "./DatasetBuilder.jsx";
 import FeaturedMinds from "./FeaturedMinds.jsx";
 import ResearchBrief from "./ResearchBrief.jsx";
-import ActivityToast from "./ActivityToast.jsx";
 import DiscussionMeter from "./DiscussionMeter.jsx";
+import TextSizeControl from "./TextSizeControl.jsx";
 import Notebook from "./Notebook.jsx";
 import ResponseControls from "./ResponseControls.jsx";
 import {
@@ -160,6 +160,21 @@ function SourceList({ sources }) {
 }
 
 export default function App() {
+  const [textSize, setTextSize] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem("great-thinkers-text-size"));
+      return saved >= 14 && saved <= 24 ? saved : 16;
+    } catch {
+      return 16;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("great-thinkers-text-size", String(textSize));
+    } catch {
+      /* Controls work without storage. */
+    }
+  }, [textSize]);
   const [data, setData] = useState(null);
   const [connection, setConnection] = useState({
     online: false,
@@ -438,14 +453,7 @@ export default function App() {
   const modelReady = connection.online && installed;
 
   return (
-    <div className="app-shell">
-      {busy && (
-        <ActivityToast
-          telemetry={telemetry}
-          room={data.rooms.find((r) => r.id === streamRoomId)}
-          phase={phase}
-        />
-      )}
+    <div className="app-shell" style={{ "--reading-size": `${textSize}px` }}>
       {mobileNav && (
         <button
           className="nav-scrim"
@@ -880,6 +888,7 @@ export default function App() {
                 </div>
               </div>
               <div className="room-tools">
+                <TextSizeControl value={textSize} onChange={setTextSize} />
                 <button
                   className="icon"
                   title="Export conversation"
@@ -930,11 +939,12 @@ export default function App() {
                 )
               }
             />
-            {currentRoom.peopleIds.length > 1 && (
+            {(currentRoom.peopleIds.length > 1 ||
+              (busy && streamRoomId === currentRoom.id)) && (
               <DiscussionMeter
                 room={currentRoom}
-                people={people}
-                busy={busy}
+                telemetry={telemetry}
+                busy={busy && streamRoomId === currentRoom.id}
                 phase={phase}
                 onContinue={() =>
                   send(

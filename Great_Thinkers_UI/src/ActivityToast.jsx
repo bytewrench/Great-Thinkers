@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Activity, ChevronDown, ChevronUp, Radio } from "lucide-react";
 
 const hues = { conflict: 8, "common-ground": 42, agreement: 155, unclear: 190 };
 const formatBytes = (n) =>
@@ -9,7 +8,7 @@ const formatBytes = (n) =>
       ? `${(n / 1024).toFixed(1)} KB`
       : `${(n / 1048576).toFixed(1)} MB`;
 
-function SignalCore({ telemetry, hue }) {
+function SignalCore({ telemetry, hue, active }) {
   const canvas = useRef(null);
   const color = useRef(hue);
   useEffect(() => {
@@ -27,7 +26,10 @@ function SignalCore({ telemetry, hue }) {
     const waves = [];
     const draw = (now) => {
       frame = requestAnimationFrame(draw);
-      if (document.hidden || now - lastDraw < (reduce.matches ? 200 : 32))
+      if (
+        document.hidden ||
+        now - lastDraw < (reduce.matches || !active ? 200 : 32)
+      )
         return;
       const dt = Math.min(100, now - lastDraw);
       lastDraw = now;
@@ -58,7 +60,7 @@ function SignalCore({ telemetry, hue }) {
       const h = color.current,
         x = width / 2,
         y = height * 0.45,
-        time = reduce.matches ? 0 : now / 1000;
+        time = reduce.matches || !active ? 0 : now / 1000;
       const light = (alpha, luminosity = 65) =>
         `hsla(${h},95%,${luminosity}%,${alpha})`;
       // Perspective floor and optical haze are decorative; pulses below are driven by received chunks.
@@ -184,113 +186,58 @@ function SignalCore({ telemetry, hue }) {
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [telemetry]);
+  }, [telemetry, active]);
   return <canvas ref={canvas} className="signal-canvas" aria-hidden="true" />;
 }
 
-export default function ActivityToast({ telemetry, room, phase }) {
-  const [compact, setCompact] = useState(false);
-  const [metrics, setMetrics] = useState({
-    bytes: 0,
-    chunks: 0,
-    textChunks: 0,
-    rate: 0,
-    elapsed: 0,
-    receiving: false,
-  });
+export default function ActivityGraphic({ telemetry, active, state }) {
+  const idle = useRef({ bytes: 0, chunks: 0, samples: [], lastAt: 0 });
+  const [metrics, setMetrics] = useState({ bytes: 0, rate: 0, elapsed: 0 });
   useEffect(() => {
+    if (!active) return;
     const timer = setInterval(() => {
       const now = performance.now(),
         d = telemetry.current;
       setMetrics({
         bytes: d.bytes,
-        chunks: d.chunks,
-        textChunks: d.textChunks,
         rate: d.samples
           .filter((s) => now - s.at < 1000)
           .reduce((n, s) => n + s.bytes, 0),
         elapsed: (now - d.startedAt) / 1000,
-        receiving: d.chunks > 0 && now - d.lastAt < 1000,
       });
     }, 200);
     return () => clearInterval(timer);
-  }, [telemetry]);
-  const question = room?.messages.findLast((m) => m.role === "user");
-  const event = room?.discussionEvents?.findLast(
-    (e) => e.questionId === question?.id,
-  );
-  const hue = hues[event?.state] ?? hues.unclear;
-  const message = room?.messages.at(-1);
-  const speaker =
-    message?.role === "assistant" && message.status !== "complete"
-      ? message.name
-      : null;
-  const title =
-    phase === "assessing"
-      ? "Comparing perspectives"
-      : speaker
-        ? "A thought takes shape"
-        : "Exploring";
+  }, [telemetry, active]);
+  const hue = hues[state] ?? hues.unclear;
   return (
-    <aside
-      className={`activity-toast ${compact ? "activity-compact" : ""}`}
+    <div
+      className="activity-inline"
       style={{ "--signal-hue": hue }}
-      aria-label="Live conversation activity"
+      aria-label="Conversation signal"
     >
-      <div className="activity-glint" />
-      <header>
-        <span className="activity-label">
-          <Radio size={13} /> LIVE EXCHANGE
-        </span>
-        <button
-          onClick={() => setCompact(!compact)}
-          aria-label={
-            compact ? "Expand activity display" : "Minimize activity display"
-          }
-        >
-          {compact ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </button>
-      </header>
-      <div className="activity-title" role="status">
-        <strong>{title}</strong>
+      <SignalCore
+        telemetry={active ? telemetry : idle}
+        hue={hue}
+        active={active}
+      />
+      <div className="activity-inline-caption">
         <span>
-          {phase === "assessing"
-            ? "Reading the completed exchange"
-            : speaker || "Waiting for the model to respond"}
+          {active
+            ? metrics.rate
+              ? "RECEIVING"
+              : "AWAITING RESPONSE"
+            : "READY"}
         </span>
+        {active && <span>{formatBytes(metrics.rate)}/s</span>}
       </div>
-      {!compact && (
-        <>
-          <div className="activity-scene">
-            <SignalCore telemetry={telemetry} hue={hue} />
-            <span className="activity-scene-label">
-              {metrics.receiving ? "SIGNAL RECEIVED" : "AWAITING RESPONSE"}
-            </span>
-            <span className="activity-rate">{formatBytes(metrics.rate)}/s</span>
-          </div>
-          <div className="activity-metrics">
-            <div>
-              <strong>{formatBytes(metrics.bytes)}</strong>
-              <span>Response data</span>
-            </div>
-            <div>
-              <strong>{metrics.textChunks}</strong>
-              <span>Text chunks</span>
-            </div>
-            <div>
-              <strong>
-                {metrics.elapsed.toFixed(1)}
-                <small>s</small>
-              </strong>
-              <span>Elapsed</span>
-            </div>
-          </div>
-          <footer>
-            <Activity size={12} />
-            <span>Measured stream traffic · stylized motion</span>
-          </footer>
-        </>
+      {active && (
+        <div
+          className="activity-inline-stats"
+          title="Measured response stream data; motion is stylized"
+        >
+          {formatBytes(metrics.bytes)} received · {metrics.elapsed.toFixed(0)}s
+        </div>
       )}
-    </aside>
+    </div>
   );
 }
